@@ -1,7 +1,11 @@
 import { Injectable, Logger, OnModuleDestroy, OnModuleInit } from '@nestjs/common';
+import * as os from 'os';
 import { MainApiClient } from '../api-client/main-api.client';
 import { WORKER_CONFIG } from '../config/worker.constants';
+import type { WorkerCommandDto } from '../contracts/worker-job.contract';
+import { ClipCacheService } from '../storage/clip-cache.service';
 import { JobRunnerService } from './job-runner.service';
+import { TmpCleanupService } from './tmp-cleanup.service';
 import { formatJobContext } from './job-log.util';
 
 @Injectable()
@@ -14,12 +18,15 @@ export class PollerService implements OnModuleInit, OnModuleDestroy {
   constructor(
     private readonly api: MainApiClient,
     private readonly runner: JobRunnerService,
+    private readonly tmpCleanup: TmpCleanupService,
+    private readonly clipCache: ClipCacheService,
   ) {}
 
   onModuleInit() {
     const { workerPollIntervalMs, workerId, workerMaxSlots } = WORKER_CONFIG;
     this.timer = setInterval(() => void this.tick(), workerPollIntervalMs);
     this.heartbeatTimer = setInterval(() => void this.heartbeat(), 30_000);
+    void this.heartbeat();
     this.logger.log(
       `Worker poller 已启动 id=${workerId} slots=${workerMaxSlots} interval=${workerPollIntervalMs}ms`,
     );
@@ -48,16 +55,53 @@ export class PollerService implements OnModuleInit, OnModuleDestroy {
   }
 
   private async heartbeat() {
-    if (this.running <= 0) return;
     try {
-      await this.api.heartbeat(this.running, this.maxSlots());
-      this.logger.debug(
-        `[Heartbeat] worker=${WORKER_CONFIG.workerId} running=${this.running}/${this.maxSlots()}`,
-      );
+      const tmpDir = this.tmpCleanup.resolveTmpDir();
+      const tmpUsage = this.tmpCleanup.scanTmpUsage(tmpDir);
+      const clipStats = this.clipCache.scanStats();
+      const commands = await this.api.heartbeat(this.running, this.maxSlots(), {
+        diskFreeBytes: this.tmpCleanup.resolveDiskFreeBytes(),
+        tmpUsedBytes: tmpUsage.tmpUsedBytes,
+        tmpDirCount: tmpUsage.dirCount,
+        clipCacheBytes: clipStats.totalBytes,
+        clipCacheProjectCount: clipStats.projectCount,
+        clipCacheFileCount: clipStats.fileCount,
+        clipCacheBase: clipStats.cacheBase,
+        clipCacheProjects: clipStats.topProjects,
+        tmpDir,
+        hostname: os.hostname(),
+      });
+      if (commands.length > 0) {
+        await this.executeCommands(commands);
+      }
     } catch (err) {
       this.logger.warn(
         `[Heartbeat] 失败 worker=${WORKER_CONFIG.workerId}: ${err instanceof Error ? err.message : err}`,
       );
+    }
+  }
+
+  private async executeCommands(commands: WorkerCommandDto[]) {
+    for (const cmd of commands) {
+      if (cmd.type !== 'cleanup_tmp') continue;
+      try {
+        const scope = cmd.scope;
+        const result =
+          scope === 'clip_cache' || scope === 'clip_cache_all' || scope.startsWith('clip_cache_project:')
+            ? this.clipCache.cleanup(scope)
+            : this.tmpCleanup.cleanup(scope, this.running, cmd.staleHours ?? 2);
+        await this.api.ackCommand(cmd.id, {
+          status: 'done',
+          freedBytes: result.freedBytes,
+          deletedDirs: result.deletedDirs,
+          message: result.message,
+        });
+      } catch (err) {
+        await this.api.ackCommand(cmd.id, {
+          status: 'failed',
+          message: err instanceof Error ? err.message : String(err),
+        });
+      }
     }
   }
 }

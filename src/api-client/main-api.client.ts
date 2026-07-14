@@ -5,6 +5,8 @@ import { firstValueFrom } from 'rxjs';
 import type {
   ComposeProgressPayload,
   JobCompleteOutputs,
+  WorkerCommandDto,
+  WorkerHeartbeatResponse,
   WorkerJobDto,
 } from '../contracts/worker-job.contract';
 import { WORKER_CONFIG } from '../config/worker.constants';
@@ -107,12 +109,73 @@ export class MainApiClient {
     );
   }
 
-  async heartbeat(runningJobs: number, capacity: number): Promise<void> {
+  async heartbeat(
+    runningJobs: number,
+    capacity: number,
+    stats?: {
+      diskFreeBytes?: number;
+      tmpUsedBytes?: number;
+      tmpDirCount?: number;
+      clipCacheBytes?: number;
+      clipCacheProjectCount?: number;
+      clipCacheFileCount?: number;
+      clipCacheBase?: string;
+      clipCacheProjects?: Array<{
+        projectId: string;
+        bytes: number;
+        fileCount: number;
+        lastAccessAt: string | null;
+      }>;
+      tmpDir?: string;
+      hostname?: string;
+    },
+  ): Promise<WorkerCommandDto[]> {
+    const { workerId } = WORKER_CONFIG;
+    try {
+      const res = await firstValueFrom(
+        this.http.post<WorkerHeartbeatResponse>(
+          `${this.baseUrl()}/internal/worker/heartbeat`,
+          {
+            workerId,
+            runningJobs,
+            capacity,
+            version: '0.2.0',
+            diskFreeBytes: stats?.diskFreeBytes,
+            tmpUsedBytes: stats?.tmpUsedBytes,
+            tmpDirCount: stats?.tmpDirCount,
+            clipCacheBytes: stats?.clipCacheBytes,
+            clipCacheProjectCount: stats?.clipCacheProjectCount,
+            clipCacheFileCount: stats?.clipCacheFileCount,
+            clipCacheBase: stats?.clipCacheBase,
+            clipCacheProjects: stats?.clipCacheProjects,
+            tmpDir: stats?.tmpDir,
+            hostname: stats?.hostname,
+          },
+          { headers: this.headers() },
+        ),
+      );
+      const body = res.data as WorkerHeartbeatResponse & { data?: WorkerHeartbeatResponse };
+      return body.commands ?? body.data?.commands ?? [];
+    } catch (err) {
+      this.logger.warn(formatHttpError(err, 'heartbeat 失败', `${this.baseUrl()}/internal/worker/heartbeat`));
+      return [];
+    }
+  }
+
+  async ackCommand(
+    commandId: string,
+    payload: {
+      status: 'done' | 'failed';
+      freedBytes?: number;
+      deletedDirs?: number;
+      message?: string;
+    },
+  ): Promise<void> {
     const { workerId } = WORKER_CONFIG;
     await firstValueFrom(
       this.http.post(
-        `${this.baseUrl()}/internal/worker/heartbeat`,
-        { workerId, runningJobs, capacity, version: '0.1.0' },
+        `${this.baseUrl()}/internal/worker/commands/${commandId}/ack`,
+        { workerId, ...payload },
         { headers: this.headers() },
       ),
     );

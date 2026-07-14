@@ -11,6 +11,7 @@ import type {
   WorkerJobDto,
 } from '../contracts/worker-job.contract';
 import { WORKER_CONFIG } from '../config/worker.constants';
+import { ClipCacheService } from '../storage/clip-cache.service';
 import { DownloaderService, UploaderService } from '../storage/storage.service';
 import { FfmpegRunner } from '../ffmpeg/ffmpeg-runner';
 import { runFfmpegCompose } from '../ffmpeg/compose-pipeline';
@@ -25,6 +26,7 @@ export class ComposeHandler {
   constructor(
     private readonly downloader: DownloaderService,
     private readonly uploader: UploaderService,
+    private readonly clipCache: ClipCacheService,
   ) {
     this.runner = new FfmpegRunner(WORKER_CONFIG.ffmpegPath, WORKER_CONFIG.ffprobePath);
   }
@@ -47,19 +49,22 @@ export class ComposeHandler {
       const clipPaths: string[] = [];
       for (let i = 0; i < payload.shots.length; i++) {
         const shot = payload.shots[i];
-        const clipPath = path.join(workDir, `clip_${String(i).padStart(3, '0')}.mp4`);
         await onProgress({
           stage: 'downloading',
           percent: 5 + Math.round((i / payload.shots.length) * 20),
-          message: `下载片段 ${i + 1}/${payload.shots.length}...`,
+          message: `准备片段 ${i + 1}/${payload.shots.length}...`,
         });
-        await this.downloader.download(shot.videoUrl, clipPath);
+        const clipPath = await this.clipCache.ensureClip(
+          job.projectId,
+          shot.shotIndex,
+          shot.videoUrl,
+          shot.updatedAt,
+        );
         clipPaths.push(clipPath);
       }
 
-      const audioPath = path.join(workDir, 'audio');
-      await this.downloader.download(payload.musicUrl, audioPath);
-      await onProgress({ stage: 'downloading', percent: 28, message: '素材下载完成' });
+      const audioPath = await this.clipCache.ensureMusic(job.projectId, payload.musicUrl);
+      await onProgress({ stage: 'downloading', percent: 28, message: '素材准备完成' });
 
       let effectiveAudioStart = payload.musicStartTime ?? 0;
       if (payload.audioOffsetCalibrationEnabled && payload.audioOffsetMs) {

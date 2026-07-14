@@ -41,6 +41,7 @@ export interface ComposeShotPayload {
   duration: number;
   shotIndex: number;
   sceneId?: string;
+  updatedAt?: string;
 }
 
 export interface ComposeFinalPayload {
@@ -144,4 +145,24 @@ export interface JobCompleteOutputs {
   editorConfig?: RenderEditorPayload['editorConfig'];
   shots?: Array<{ shotId: string; editorFrameUrls: string[]; editorFrameSourceUrl: string }>;
   extra?: Record<string, unknown>;
+}
+
+export type WorkerCleanupScope =
+  | 'stale'
+  | 'all_tmp'
+  | 'clip_cache'
+  | 'clip_cache_all'
+  | `project:${string}`
+  | `clip_cache_project:${string}`;
+
+export interface WorkerCommandDto {
+  id: string;
+  type: 'cleanup_tmp';
+  scope: WorkerCleanupScope;
+  staleHours?: number;
+}
+
+export interface WorkerHeartbeatResponse {
+  ok: boolean;
+  commands?: WorkerCommandDto[];
 }
