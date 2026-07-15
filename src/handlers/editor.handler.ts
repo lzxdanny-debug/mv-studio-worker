@@ -13,6 +13,8 @@ import { WORKER_CONFIG } from '../config/worker.constants';
 import { DownloaderService, UploaderService } from '../storage/storage.service';
 import { FfmpegRunner } from '../ffmpeg/ffmpeg-runner';
 import { buildEditorOverlayFilter, prepareEditorConfigForRender } from '../ffmpeg/editor-overlay';
+import { LyricsV2RendererService } from '../rendering/lyrics-v2-renderer.service';
+import type { SubtitleConfigPayload } from '../contracts/worker-job.contract';
 
 @Injectable()
 export class EditorHandler {
@@ -21,6 +23,7 @@ export class EditorHandler {
   constructor(
     private readonly downloader: DownloaderService,
     private readonly uploader: UploaderService,
+    private readonly lyricsV2: LyricsV2RendererService,
   ) {
     this.runner = new FfmpegRunner(WORKER_CONFIG.ffmpegPath, WORKER_CONFIG.ffprobePath);
   }
@@ -62,6 +65,10 @@ export class EditorHandler {
         payload.editorConfig,
       );
       const filter = buildEditorOverlayFilter(renderConfig, workDir, duration);
+      const lyricsV2Layer = renderConfig.layers.find((layer) => {
+        if (layer.visible === false || layer.type !== 'lyrics') return false;
+        return this.lyricsV2.supports(layer.subtitleConfig as SubtitleConfigPayload | undefined);
+      });
 
       let audioPath: string | undefined;
       if (shouldReplaceAudio) {
@@ -71,6 +78,7 @@ export class EditorHandler {
       }
 
       const outputPath = path.join(workDir, 'output.mp4');
+      const baseOutputPath = lyricsV2Layer ? path.join(workDir, 'output-base.mp4') : outputPath;
       await onProgress({ stage: 'encoding', percent: 50, message: '写入编辑内容...' });
       const ffmpegArgs = [
         '-y', '-i', sourcePath,
@@ -82,9 +90,24 @@ export class EditorHandler {
           : ['-c:v', 'copy']),
         '-c:a', 'aac', '-b:a', '192k',
         '-movflags', '+faststart', '-shortest', '-f', 'mp4',
-        outputPath,
+        baseOutputPath,
       ];
       await this.runner.exec(ffmpegArgs);
+
+      if (lyricsV2Layer) {
+        await onProgress({ stage: 'encoding', percent: 72, message: '渲染动态歌词...' });
+        const ok = await this.lyricsV2.burn({
+          runner: this.runner,
+          inputPath: baseOutputPath,
+          outputPath,
+          workDir,
+          lrcContent: String(lyricsV2Layer.lrcContent || payload.lrcContent || ''),
+          durationSec: duration,
+          aspectRatio: payload.aspectRatio,
+          config: lyricsV2Layer.subtitleConfig as SubtitleConfigPayload,
+        });
+        if (!ok) throw new Error('动态歌词渲染失败');
+      }
 
       await onProgress({ stage: 'uploading', percent: 90, message: '上传成片...' });
       await this.uploader.uploadPresigned(outputPath, upload.resultPutUrl, upload.contentType);

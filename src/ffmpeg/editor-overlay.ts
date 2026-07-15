@@ -104,6 +104,8 @@ export function buildEditorOverlayFilter(
       filters.push(`drawtext=${options.join(':')}`);
     }
     if (layer.type === 'lyrics') {
+      const subtitleConfig = layer.subtitleConfig as Record<string, unknown> | undefined;
+      if (subtitleConfig?.renderer === 'remotion' && subtitleConfig?.version === 2) continue;
       const lrc = String(layer.lrcContent ?? '').trim();
       if (!lrc) continue;
       const rows = parseEditorLrcLines(lrc);

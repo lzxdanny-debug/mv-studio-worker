@@ -14,6 +14,7 @@ import { DownloaderService, UploaderService } from '../storage/storage.service';
 import { FfmpegRunner } from '../ffmpeg/ffmpeg-runner';
 import { truncateAssByDuration } from '../ffmpeg/filters';
 import { burnSubtitleOntoVideo } from '../ffmpeg/subtitle-burn';
+import { LyricsV2RendererService } from '../rendering/lyrics-v2-renderer.service';
 
 @Injectable()
 export class SubtitleHandler {
@@ -22,6 +23,7 @@ export class SubtitleHandler {
   constructor(
     private readonly downloader: DownloaderService,
     private readonly uploader: UploaderService,
+    private readonly lyricsV2: LyricsV2RendererService,
   ) {
     this.runner = new FfmpegRunner(WORKER_CONFIG.ffmpegPath, WORKER_CONFIG.ffprobePath);
   }
@@ -41,13 +43,22 @@ export class SubtitleHandler {
       await this.downloader.download(payload.sourceVideoUrl, sourcePath);
 
       const duration = await this.runner.probeDuration(sourcePath, 60);
-      const assContent = payload.assContent?.trim();
-      if (!assContent) throw new Error('payload 缺少 assContent，无法烧录字幕');
-
-      const ass = truncateAssByDuration(assContent, duration);
       const outputPath = path.join(workDir, 'output.mp4');
-      await onProgress({ stage: 'encoding', percent: 50, message: '烧录字幕...' });
-      const ok = await burnSubtitleOntoVideo(this.runner, sourcePath, ass, outputPath, workDir);
+      await onProgress({ stage: 'encoding', percent: 50, message: '渲染歌词...' });
+      let ok = false;
+      if (this.lyricsV2.supports(payload.subtitleConfig)) {
+        ok = await this.lyricsV2.burn({
+          runner: this.runner, inputPath: sourcePath, outputPath, workDir,
+          lrcContent: payload.lrcContent, durationSec: duration,
+          aspectRatio: payload.aspectRatio, config: payload.subtitleConfig,
+        });
+      } else {
+        const assContent = payload.assContent?.trim();
+        if (!assContent) throw new Error('payload 缺少 assContent，无法烧录字幕');
+        ok = await burnSubtitleOntoVideo(
+          this.runner, sourcePath, truncateAssByDuration(assContent, duration), outputPath, workDir,
+        );
+      }
       if (!ok) throw new Error('字幕烧录失败');
 
       await onProgress({ stage: 'uploading', percent: 90, message: '上传成片...' });

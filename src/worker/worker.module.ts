@@ -10,6 +10,7 @@ import { EditorThumbnailsHandler } from '../handlers/editor-thumbnails.handler';
 import { JobRunnerService } from './job-runner.service';
 import { PollerService } from './poller.service';
 import { TmpCleanupService } from './tmp-cleanup.service';
+import { LyricsV2RendererService } from '../rendering/lyrics-v2-renderer.service';
 
 @Module({
   imports: [HttpModule.register({ timeout: 120_000 })],
@@ -18,6 +19,7 @@ import { TmpCleanupService } from './tmp-cleanup.service';
     DownloaderService,
     UploaderService,
     ClipCacheService,
+    LyricsV2RendererService,
     ComposeHandler,
     SubtitleHandler,
     EditorHandler,

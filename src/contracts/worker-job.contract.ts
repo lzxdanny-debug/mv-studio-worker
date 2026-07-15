@@ -22,6 +22,16 @@ export interface ComposeProgressPayload {
 }
 
 export interface SubtitleConfigPayload {
+  enabled?: boolean;
+  renderer?: 'remotion';
+  version?: 2;
+  lyricsV2Preset?:
+    | 'karaoke' | 'beasty' | 'deep-diver' | 'youshaei' | 'pod-p'
+    | 'mozi' | 'popline' | 'glitch-infinite' | 'seamless-bounce'
+    | 'baby-earthquake' | 'blur-switch' | 'highlighter-box' | 'simple'
+    | 'think-media' | 'focus' | 'blur-in' | 'with-backdrop';
+  position?: 'bottom' | 'top' | 'lower-third' | 'center';
+  fontSizePct?: number;
   [key: string]: unknown;
 }
 

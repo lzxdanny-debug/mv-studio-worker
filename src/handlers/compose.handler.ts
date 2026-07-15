@@ -17,6 +17,7 @@ import { FfmpegRunner } from '../ffmpeg/ffmpeg-runner';
 import { runFfmpegCompose } from '../ffmpeg/compose-pipeline';
 import { getColorGradeFilter, truncateAssByDuration } from '../ffmpeg/filters';
 import { applyWatermarkPass, burnSubtitleOntoVideo } from '../ffmpeg/subtitle-burn';
+import { LyricsV2RendererService } from '../rendering/lyrics-v2-renderer.service';
 
 @Injectable()
 export class ComposeHandler {
@@ -27,6 +28,7 @@ export class ComposeHandler {
     private readonly downloader: DownloaderService,
     private readonly uploader: UploaderService,
     private readonly clipCache: ClipCacheService,
+    private readonly lyricsV2: LyricsV2RendererService,
   ) {
     this.runner = new FfmpegRunner(WORKER_CONFIG.ffmpegPath, WORKER_CONFIG.ffprobePath);
   }
@@ -110,7 +112,21 @@ export class ComposeHandler {
       let subtitleBurned = false;
       let resultPath = finalOutputPath;
 
-      if (payload.assContent?.trim() && payload.subtitleConfig?.enabled !== false) {
+      if (this.lyricsV2.supports(payload.subtitleConfig) && payload.lrcContent?.trim()) {
+        const subbedPath = path.join(workDir, 'output_subbed.mp4');
+        await onProgress({ stage: 'encoding', percent: 94, message: '渲染动态歌词...' });
+        subtitleBurned = await this.lyricsV2.burn({
+          runner: this.runner,
+          inputPath: cleanLocalPath,
+          outputPath: subbedPath,
+          workDir,
+          lrcContent: payload.lrcContent,
+          durationSec: actualDuration,
+          aspectRatio: payload.aspectRatio,
+          config: payload.subtitleConfig!,
+        });
+        if (subtitleBurned) resultPath = subbedPath;
+      } else if (payload.assContent?.trim() && payload.subtitleConfig?.enabled !== false) {
         const ass = truncateAssByDuration(payload.assContent, actualDuration);
         const subbedPath = path.join(workDir, 'output_subbed.mp4');
         await onProgress({ stage: 'encoding', percent: 94, message: '烧录字幕...' });
