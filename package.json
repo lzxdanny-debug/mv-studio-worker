@@ -6,7 +6,8 @@
     "build": "nest build",
     "dev": "nest start --watch",
     "start": "node dist/main.js",
-    "start:prod": "node dist/main.js"
+    "start:prod": "node dist/main.js",
+    "bench": "node scripts/benchmark-compose.mjs"
   },
   "dependencies": {
     "@nestjs/axios": "^4.0.1",
