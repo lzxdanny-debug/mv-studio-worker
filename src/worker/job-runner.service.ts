@@ -6,6 +6,9 @@ import { ComposeHandler } from '../handlers/compose.handler';
 import { SubtitleHandler } from '../handlers/subtitle.handler';
 import { EditorHandler } from '../handlers/editor.handler';
 import { EditorThumbnailsHandler } from '../handlers/editor-thumbnails.handler';
+import { PrepareKaraokeAudioHandler } from '../handlers/prepare-karaoke-audio.handler';
+import { ExtractKaraokeFrameHandler } from '../handlers/extract-karaoke-frame.handler';
+import { ComposeKaraokeHandler } from '../handlers/compose-karaoke.handler';
 import { formatJobContext } from './job-log.util';
 
 @Injectable()
@@ -18,6 +21,9 @@ export class JobRunnerService {
     private readonly subtitleHandler: SubtitleHandler,
     private readonly editorHandler: EditorHandler,
     private readonly thumbnailsHandler: EditorThumbnailsHandler,
+    private readonly prepareKaraokeAudioHandler: PrepareKaraokeAudioHandler,
+    private readonly extractKaraokeFrameHandler: ExtractKaraokeFrameHandler,
+    private readonly composeKaraokeHandler: ComposeKaraokeHandler,
   ) {}
 
   private workerId(): string {
@@ -58,6 +64,15 @@ export class JobRunnerService {
           break;
         case 'editor_thumbnails':
           outputs = await this.thumbnailsHandler.run(job, onProgress);
+          break;
+        case 'prepare_karaoke_audio':
+          outputs = await this.prepareKaraokeAudioHandler.run(job, onProgress);
+          break;
+        case 'extract_karaoke_frame':
+          outputs = await this.extractKaraokeFrameHandler.run(job, onProgress);
+          break;
+        case 'compose_karaoke':
+          outputs = await this.composeKaraokeHandler.run(job, onProgress);
           break;
         default:
           throw new Error(`未知 job type: ${(job as WorkerJobDto).type}`);

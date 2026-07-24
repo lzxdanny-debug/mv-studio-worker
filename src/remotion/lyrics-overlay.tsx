@@ -10,6 +10,7 @@ export type LyricsOverlayProps = {
     lyricsV2Preset?: string;
     position?: string;
     fontSizePct?: number;
+    maxLines?: number;
   };
 };
 
@@ -57,14 +58,20 @@ export const LyricsOverlay: React.FC<LyricsOverlayProps> = ({ lrcContent, durati
   const words = line.text.split(/\s+/).filter(Boolean);
   const progress = clamp((now - line.start) / Math.max(.25, line.end - line.start));
   const spec = SPECS[config.lyricsV2Preset ?? 'mozi'] ?? SPECS.mozi;
-  const sizePct = (config.fontSizePct ?? 7.8) * Math.min(1, 28 / Math.max(16, line.text.length));
-  const splitAt = spec.stacked && words.length > 1 ? Math.ceil(words.length / 2) : words.length;
-  const rows = spec.stacked && words.length > 1 ? [words.slice(0, splitAt), words.slice(splitAt)] : [words];
+  const maxLines = Math.max(1, Math.min(2, Math.round(config.maxLines ?? 2)));
+  const shouldStack = spec.stacked && maxLines > 1 && words.length > 1;
+  const splitAt = shouldStack ? Math.ceil(words.length / 2) : words.length;
+  const rows = shouldStack ? [words.slice(0, splitAt), words.slice(splitAt)] : [words];
+  const longestRowChars = Math.max(...rows.map((row) => row.join(' ').length), 1);
+  const sizePct = Math.max(
+    2.8,
+    (config.fontSizePct ?? 5.4) * Math.min(1, 16 / Math.max(10, longestRowChars)),
+  );
   const position = config.position === 'top' ? { top: '8%' } : config.position === 'center' ? { top: '48%', transform: 'translateY(-50%)' } : { bottom: config.position === 'bottom' ? '8%' : '20%' };
   return <AbsoluteFill style={{ backgroundColor: 'transparent' }}>
     <div style={{ position: 'absolute', left: '4%', right: '4%', display: 'flex', justifyContent: 'center', textAlign: 'center', ...position }}>
       <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', gap: 8, maxWidth: '96%', background: spec.backdrop, borderRadius: spec.backdrop ? 14 : 0, padding: spec.backdrop ? '12px 20px' : 0 }}>
-        {rows.map((row, rowIndex) => <div key={rowIndex} style={{ display: 'flex', flexWrap: 'wrap', alignItems: 'center', justifyContent: 'center', gap: '8px 20px' }}>
+        {rows.map((row, rowIndex) => <div key={rowIndex} style={{ display: 'flex', flexWrap: 'nowrap', alignItems: 'center', justifyContent: 'center', gap: '6px 12px', maxWidth: '100%' }}>
         {row.map((word, rowWordIndex) => {
           const i = (rows.length > 1 && rowIndex === 1 ? splitAt : 0) + rowWordIndex;
           const active = progress >= (i + 1) / words.length;

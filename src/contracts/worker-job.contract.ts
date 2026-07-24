@@ -4,7 +4,10 @@ export type ComposeJobType =
   | 'compose_final'
   | 'recompose_subtitle'
   | 'render_editor'
-  | 'editor_thumbnails';
+  | 'editor_thumbnails'
+  | 'prepare_karaoke_audio'
+  | 'extract_karaoke_frame'
+  | 'compose_karaoke';
 
 export type ComposeJobStatus =
   | 'queued'
@@ -32,6 +35,7 @@ export interface SubtitleConfigPayload {
     | 'think-media' | 'focus' | 'blur-in' | 'with-backdrop';
   position?: 'bottom' | 'top' | 'lower-third' | 'center';
   fontSizePct?: number;
+  maxLines?: number;
   [key: string]: unknown;
 }
 
@@ -117,11 +121,56 @@ export interface EditorThumbnailsPayload {
   shots: EditorThumbnailShotPayload[];
 }
 
+export interface PrepareKaraokeAudioPayload {
+  projectId: string;
+  musicUrl: string;
+  musicStartTime: number;
+  segments: Array<{
+    segmentId: string;
+    startTime: number;
+    duration: number;
+    leadInMs: number;
+    tailMs: number;
+  }>;
+}
+
+export interface ExtractKaraokeFramePayload {
+  projectId: string;
+  segmentId: string;
+  videoUrl: string;
+  plannedDurationSec: number;
+  candidateOffsetsFromEndSec: number[];
+}
+
+export interface ComposeKaraokeSegmentPayload {
+  segmentId: string;
+  segmentIndex: number;
+  videoUrl: string;
+  plannedDuration: number;
+  actualDuration?: number;
+}
+
+export interface ComposeKaraokePayload {
+  projectId: string;
+  segments: ComposeKaraokeSegmentPayload[];
+  musicUrl: string;
+  musicStartTime: number;
+  musicDuration: number;
+  aspectRatio: string;
+  resolution: string;
+  lrcContent?: string;
+  subtitleConfig?: SubtitleConfigPayload | null;
+  watermarkConfig?: WatermarkConfigPayload | null;
+}
+
 export type ComposeJobPayload =
   | ComposeFinalPayload
   | RecomposeSubtitlePayload
   | RenderEditorPayload
-  | EditorThumbnailsPayload;
+  | EditorThumbnailsPayload
+  | PrepareKaraokeAudioPayload
+  | ExtractKaraokeFramePayload
+  | ComposeKaraokePayload;
 
 export interface UploadTargets {
   resultPutUrl: string;
