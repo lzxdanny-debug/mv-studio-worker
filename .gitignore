@@ -2,3 +2,5 @@ node_modules/
 dist/
 .env
 *.log
+worker-deploy-secrets.env
+**/worker-deploy-secrets.env
