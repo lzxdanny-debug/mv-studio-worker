@@ -72,17 +72,20 @@ export class JobRunnerService {
           outputs = await this.extractKaraokeFrameHandler.run(job, onProgress);
           break;
         case 'compose_karaoke':
+        case 'compose_aimv':
           outputs = await this.composeKaraokeHandler.run(job, onProgress);
           break;
         default:
           throw new Error(`未知 job type: ${(job as WorkerJobDto).type}`);
       }
+      if (job.type === 'compose_aimv') await this.api.completeAimvComposition(job.projectId, outputs);
       await this.api.complete(job.jobId, outputs);
       this.logger.log(`[Done] ${ctx()} result=${outputs.resultUrl?.slice(0, 80) ?? 'n/a'}`);
     } catch (err) {
       const msg = err instanceof Error ? err.message : String(err);
       this.logger.error(`[Failed] ${ctx()} error=${msg.slice(0, 200)}`);
-      await this.api.fail(job.jobId, msg, true);
+      await this.api.fail(job.jobId, msg, job.type !== 'compose_aimv');
+      if (job.type === 'compose_aimv') await this.api.failAimvComposition(job.projectId, msg);
     }
   }
 }

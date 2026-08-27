@@ -13,6 +13,13 @@ export const WORKER_CONFIG = {
   workerId: 'local-dev-01',
   /** 本机同时处理的合成任务数 */
   workerMaxSlots: 1,
+  /** AI MV 渠道任务独立槽位；不会占用本机 FFmpeg 合成槽位 */
+  aimvWorkerMaxSlots: 2,
+  /** AI MV claim 租约秒数，执行中会定期续租 */
+  aimvLeaseSeconds: 90,
+  /** 到期文件清理是轻量 I/O 任务，使用独立槽位 */
+  aimvCleanupMaxSlots: 2,
+  aimvCleanupLeaseSeconds: 120,
   /** claim 轮询间隔（毫秒） */
   workerPollIntervalMs: 3000,
   ffmpegPath: 'ffmpeg',

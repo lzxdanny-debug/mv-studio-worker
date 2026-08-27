@@ -7,7 +7,8 @@ export type ComposeJobType =
   | 'editor_thumbnails'
   | 'prepare_karaoke_audio'
   | 'extract_karaoke_frame'
-  | 'compose_karaoke';
+  | 'compose_karaoke'
+  | 'compose_aimv';
 
 export type ComposeJobStatus =
   | 'queued'
@@ -163,6 +164,8 @@ export interface ComposeKaraokePayload {
   watermarkConfig?: WatermarkConfigPayload | null;
 }
 
+export interface ComposeAimvPayload extends ComposeKaraokePayload {}
+
 export type ComposeJobPayload =
   | ComposeFinalPayload
   | RecomposeSubtitlePayload
@@ -170,7 +173,8 @@ export type ComposeJobPayload =
   | EditorThumbnailsPayload
   | PrepareKaraokeAudioPayload
   | ExtractKaraokeFramePayload
-  | ComposeKaraokePayload;
+  | ComposeKaraokePayload
+  | ComposeAimvPayload;
 
 export interface UploadTargets {
   resultPutUrl: string;
@@ -195,6 +199,27 @@ export interface WorkerJobDto {
   projectTitle?: string;
   payload: ComposeJobPayload;
   upload: UploadTargets;
+}
+
+export interface AimvWorkerJobDto {
+  jobId: string;
+  attemptToken: string;
+  projectId: string;
+  mvId: string;
+  unitId: string;
+  unitIndex: number;
+  provider: string;
+  exactModel: string;
+  capability: string;
+  timeoutSec: number;
+  payload: Record<string, unknown>;
+}
+
+export interface AimvCleanupJobDto {
+  jobId: string;
+  projectId: string;
+  attemptToken: string;
+  leaseSeconds: number;
 }
 
 export interface JobCompleteOutputs {

@@ -8,6 +8,8 @@ import type {
   WorkerCommandDto,
   WorkerHeartbeatResponse,
   WorkerJobDto,
+  AimvWorkerJobDto,
+  AimvCleanupJobDto,
 } from '../contracts/worker-job.contract';
 import { WORKER_CONFIG } from '../config/worker.constants';
 import { formatJobContext } from '../worker/job-log.util';
@@ -75,6 +77,76 @@ export class MainApiClient {
       this.logger.warn(formatHttpError(err, 'claim 失败', `${this.baseUrl()}/internal/worker/jobs/claim`));
       return [];
     }
+  }
+
+  async claimAimvJobs(maxSlots: number): Promise<AimvWorkerJobDto[]> {
+    try {
+      const res = await firstValueFrom(this.http.post(
+        `${this.baseUrl()}/internal/aimv-worker/jobs/claim`,
+        { workerId: WORKER_CONFIG.workerId, maxSlots, leaseSeconds: WORKER_CONFIG.aimvLeaseSeconds },
+        { headers: this.headers() },
+      ));
+      const body = res.data as { jobs?: AimvWorkerJobDto[]; data?: { jobs?: AimvWorkerJobDto[] } };
+      return body?.jobs ?? body?.data?.jobs ?? [];
+    } catch (err) {
+      this.logger.warn(formatHttpError(err, 'AI MV claim 失败', `${this.baseUrl()}/internal/aimv-worker/jobs/claim`));
+      return [];
+    }
+  }
+
+  async renewAimvLease(jobId: string, attemptToken: string): Promise<void> {
+    await firstValueFrom(this.http.patch(
+      `${this.baseUrl()}/internal/aimv-worker/jobs/${jobId}/lease`,
+      { attemptToken, leaseSeconds: WORKER_CONFIG.aimvLeaseSeconds },
+      { headers: this.headers() },
+    ));
+  }
+
+  async executeAimvJob(job: AimvWorkerJobDto): Promise<void> {
+    await firstValueFrom(this.http.post(
+      `${this.baseUrl()}/internal/aimv-worker/jobs/${job.jobId}/execute`,
+      { attemptToken: job.attemptToken },
+      { headers: this.headers(), timeout: 0 },
+    ));
+  }
+
+  async completeAimvComposition(projectId: string, outputs: JobCompleteOutputs): Promise<void> {
+    await firstValueFrom(this.http.post(
+      `${this.baseUrl()}/internal/aimv-worker/projects/${projectId}/composition-succeeded`,
+      { resultUrl: outputs.resultUrl },
+      { headers: this.headers() },
+    ));
+  }
+
+  async failAimvComposition(projectId: string, error: string): Promise<void> {
+    await firstValueFrom(this.http.post(
+      `${this.baseUrl()}/internal/aimv-worker/projects/${projectId}/composition-failed`,
+      { error },
+      { headers: this.headers() },
+    ));
+  }
+
+  async claimAimvCleanupJobs(maxSlots: number): Promise<AimvCleanupJobDto[]> {
+    try {
+      const res = await firstValueFrom(this.http.post(
+        `${this.baseUrl()}/internal/aimv-worker/cleanup-jobs/claim`,
+        { workerId: WORKER_CONFIG.workerId, maxSlots, leaseSeconds: WORKER_CONFIG.aimvCleanupLeaseSeconds },
+        { headers: this.headers() },
+      ));
+      const body = res.data as { jobs?: AimvCleanupJobDto[]; data?: { jobs?: AimvCleanupJobDto[] } };
+      return body?.jobs ?? body?.data?.jobs ?? [];
+    } catch (error) {
+      this.logger.warn(formatHttpError(error, 'AI MV cleanup claim 失败', `${this.baseUrl()}/internal/aimv-worker/cleanup-jobs/claim`));
+      return [];
+    }
+  }
+
+  async renewAimvCleanupLease(job: AimvCleanupJobDto): Promise<void> {
+    await firstValueFrom(this.http.patch(`${this.baseUrl()}/internal/aimv-worker/cleanup-jobs/${job.jobId}/lease`, { attemptToken: job.attemptToken, leaseSeconds: WORKER_CONFIG.aimvCleanupLeaseSeconds }, { headers: this.headers() }));
+  }
+
+  async executeAimvCleanup(job: AimvCleanupJobDto): Promise<void> {
+    await firstValueFrom(this.http.post(`${this.baseUrl()}/internal/aimv-worker/cleanup-jobs/${job.jobId}/execute`, { attemptToken: job.attemptToken }, { headers: this.headers(), timeout: 300_000 }));
   }
 
   async updateProgress(jobId: string, progress: ComposeProgressPayload): Promise<void> {
