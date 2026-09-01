@@ -14,7 +14,7 @@ export const WORKER_CONFIG = {
   /** 本机同时处理的合成任务数 */
   workerMaxSlots: 1,
   /** AI MV 渠道任务独立槽位；不会占用本机 FFmpeg 合成槽位 */
-  aimvWorkerMaxSlots: 2,
+  aimvWorkerMaxSlots: 10,
   /** AI MV claim 租约秒数，执行中会定期续租 */
   aimvLeaseSeconds: 90,
   /** 到期文件清理是轻量 I/O 任务，使用独立槽位 */
