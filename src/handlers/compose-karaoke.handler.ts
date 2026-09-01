@@ -166,10 +166,14 @@ export class ComposeKaraokeHandler {
 
       const actualClipDuration = await this.runner.probeDuration(clipPaths[i], 0);
       const plannedDuration = segment.plannedDuration;
-      // 硬切到 plannedDuration，去掉 Provider 多余尾部；若素材更短则以素材实际时长为准
-      const effectiveDuration = plannedDuration > 0 && actualClipDuration > 0
-        ? Math.min(plannedDuration, actualClipDuration)
-        : (plannedDuration > 0 ? plannedDuration : actualClipDuration);
+      const reportedDuration = Number(segment.actualDuration);
+      const targetDuration = Number.isFinite(reportedDuration) && reportedDuration > 0
+        ? Math.min(plannedDuration, reportedDuration)
+        : plannedDuration;
+      // AIMV 会传入渠道实际成功时长；同时用探测时长兜底，避免把短素材循环拉长。
+      const effectiveDuration = targetDuration > 0 && actualClipDuration > 0
+        ? Math.min(targetDuration, actualClipDuration)
+        : (targetDuration > 0 ? targetDuration : actualClipDuration);
 
       const vfChain = MAX_HARD_CUT_FADE_SEC > 0
         ? `${scaleFilter},fade=t=out:st=${Math.max(0, effectiveDuration - MAX_HARD_CUT_FADE_SEC).toFixed(3)}:d=${MAX_HARD_CUT_FADE_SEC}`

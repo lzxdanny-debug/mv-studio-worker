@@ -113,7 +113,7 @@ export class MainApiClient {
   async completeAimvComposition(projectId: string, outputs: JobCompleteOutputs): Promise<void> {
     await firstValueFrom(this.http.post(
       `${this.baseUrl()}/internal/aimv-worker/projects/${projectId}/composition-succeeded`,
-      { resultUrl: outputs.resultUrl },
+      { resultUrl: outputs.resultUrl, actualDurationSec: outputs.actualDurationSec },
       { headers: this.headers() },
     ));
   }
