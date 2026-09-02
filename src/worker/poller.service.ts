@@ -8,6 +8,15 @@ import { JobRunnerService } from './job-runner.service';
 import { TmpCleanupService } from './tmp-cleanup.service';
 import { formatJobContext } from './job-log.util';
 
+export type WorkerSlotSnapshot = {
+  workerId: string;
+  compose: { running: number; max: number };
+  aimv: { running: number; max: number };
+  cleanup: { running: number; max: number };
+  tickInFlight: boolean;
+  oldestAimvAgeMs: number | null;
+};
+
 @Injectable()
 export class PollerService implements OnModuleInit, OnModuleDestroy {
   private readonly logger = new Logger(PollerService.name);
@@ -15,6 +24,8 @@ export class PollerService implements OnModuleInit, OnModuleDestroy {
   private running = 0;
   private runningAimv = 0;
   private runningCleanup = 0;
+  private ticking = false;
+  private readonly aimvStartedAt = new Map<string, number>();
   private heartbeatTimer: NodeJS.Timeout | null = null;
 
   constructor(
@@ -39,41 +50,77 @@ export class PollerService implements OnModuleInit, OnModuleDestroy {
     if (this.heartbeatTimer) clearInterval(this.heartbeatTimer);
   }
 
+  snapshot(): WorkerSlotSnapshot {
+    let oldestAimvAgeMs: number | null = null;
+    const now = Date.now();
+    for (const startedAt of this.aimvStartedAt.values()) {
+      const age = now - startedAt;
+      if (oldestAimvAgeMs == null || age > oldestAimvAgeMs) oldestAimvAgeMs = age;
+    }
+    return {
+      workerId: WORKER_CONFIG.workerId,
+      compose: { running: this.running, max: this.maxSlots() },
+      aimv: { running: this.runningAimv, max: WORKER_CONFIG.aimvWorkerMaxSlots },
+      cleanup: { running: this.runningCleanup, max: WORKER_CONFIG.aimvCleanupMaxSlots },
+      tickInFlight: this.ticking,
+      oldestAimvAgeMs,
+    };
+  }
+
   private maxSlots(): number {
     return WORKER_CONFIG.workerMaxSlots;
   }
 
   private async tick() {
+    if (this.ticking) return;
+    this.ticking = true;
+    try {
+      await Promise.all([this.claimCompose(), this.claimAimv(), this.claimCleanup()]);
+    } finally {
+      this.ticking = false;
+    }
+  }
+
+  private async claimCompose() {
     const capacity = this.maxSlots() - this.running;
-    if (capacity > 0) {
-      const jobs = await this.api.claimJobs(capacity);
-      for (const job of jobs) {
-        this.running++;
-        this.logger.log(`[Claim] ${formatJobContext(job, WORKER_CONFIG.workerId)}`);
-        void this.runner.run(job).finally(() => { this.running--; });
-      }
+    if (capacity <= 0) return;
+    const jobs = await this.api.claimJobs(capacity);
+    for (const job of jobs) {
+      this.running++;
+      this.logger.log(`[Claim] ${formatJobContext(job, WORKER_CONFIG.workerId)}`);
+      void this.runner.run(job).finally(() => { this.running--; });
     }
-    const aimvCapacity = WORKER_CONFIG.aimvWorkerMaxSlots - this.runningAimv;
-    if (aimvCapacity > 0) {
-      const jobs = await this.api.claimAimvJobs(aimvCapacity);
-      for (const job of jobs) {
-        this.runningAimv++;
-        this.logger.log(`[AI MV Claim] mv=${job.mvId} unit=${job.unitIndex} ${job.provider}/${job.exactModel}`);
-        void this.runAimv(job).finally(() => { this.runningAimv--; });
-      }
+  }
+
+  private async claimAimv() {
+    const capacity = WORKER_CONFIG.aimvWorkerMaxSlots - this.runningAimv;
+    if (capacity <= 0) return;
+    const jobs = await this.api.claimAimvJobs(capacity);
+    for (const job of jobs) {
+      this.runningAimv++;
+      this.aimvStartedAt.set(job.jobId, Date.now());
+      this.logger.log(`[AI MV Claim] mv=${job.mvId} unit=${job.unitIndex} ${job.provider}/${job.exactModel}`);
+      void this.runAimv(job).finally(() => {
+        this.aimvStartedAt.delete(job.jobId);
+        this.runningAimv--;
+      });
     }
-    const cleanupCapacity = WORKER_CONFIG.aimvCleanupMaxSlots - this.runningCleanup;
-    if (cleanupCapacity > 0) {
-      const jobs = await this.api.claimAimvCleanupJobs(cleanupCapacity);
-      for (const job of jobs) {
-        this.runningCleanup++;
-        this.logger.log(`[AI MV Cleanup Claim] project=${job.projectId} job=${job.jobId}`);
-        void this.runCleanup(job).finally(() => { this.runningCleanup--; });
-      }
+  }
+
+  private async claimCleanup() {
+    const capacity = WORKER_CONFIG.aimvCleanupMaxSlots - this.runningCleanup;
+    if (capacity <= 0) return;
+    const jobs = await this.api.claimAimvCleanupJobs(capacity);
+    for (const job of jobs) {
+      this.runningCleanup++;
+      this.logger.log(`[AI MV Cleanup Claim] project=${job.projectId} job=${job.jobId}`);
+      void this.runCleanup(job).finally(() => { this.runningCleanup--; });
     }
   }
 
   private async runAimv(job: AimvWorkerJobDto) {
+    const abort = new AbortController();
+    const watchdog = setTimeout(() => abort.abort(), WORKER_CONFIG.aimvExecuteTimeoutMs);
     const renewEveryMs = Math.max(10_000, Math.floor(WORKER_CONFIG.aimvLeaseSeconds * 500));
     const leaseTimer = setInterval(() => {
       void this.api.renewAimvLease(job.jobId, job.attemptToken).catch((error) => {
@@ -81,11 +128,19 @@ export class PollerService implements OnModuleInit, OnModuleDestroy {
       });
     }, renewEveryMs);
     try {
-      await this.api.executeAimvJob(job);
+      await Promise.race([
+        this.api.executeAimvJob(job, abort.signal),
+        new Promise<never>((_, reject) => {
+          const onAbort = () => reject(new Error(`AIMV_EXECUTE_TIMEOUT after ${WORKER_CONFIG.aimvExecuteTimeoutMs}ms`));
+          if (abort.signal.aborted) onAbort();
+          else abort.signal.addEventListener('abort', onAbort, { once: true });
+        }),
+      ]);
       this.logger.log(`[AI MV Done] mv=${job.mvId} unit=${job.unitIndex}`);
     } catch (error) {
       this.logger.error(`[AI MV Execute] 请求中断 mv=${job.mvId} unit=${job.unitIndex}: ${error instanceof Error ? error.message : error}`);
     } finally {
+      clearTimeout(watchdog);
       clearInterval(leaseTimer);
     }
   }

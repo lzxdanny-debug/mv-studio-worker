@@ -34,5 +34,6 @@ import { LyricsV2RendererService } from '../rendering/lyrics-v2-renderer.service
     TmpCleanupService,
     PollerService,
   ],
+  exports: [PollerService],
 })
 export class WorkerModule {}

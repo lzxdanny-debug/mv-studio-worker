@@ -98,15 +98,15 @@ export class MainApiClient {
     await firstValueFrom(this.http.patch(
       `${this.baseUrl()}/internal/aimv-worker/jobs/${jobId}/lease`,
       { attemptToken, leaseSeconds: WORKER_CONFIG.aimvLeaseSeconds },
-      { headers: this.headers() },
+      { headers: this.headers(), timeout: 15_000 },
     ));
   }
 
-  async executeAimvJob(job: AimvWorkerJobDto): Promise<void> {
+  async executeAimvJob(job: AimvWorkerJobDto, signal?: AbortSignal): Promise<void> {
     await firstValueFrom(this.http.post(
       `${this.baseUrl()}/internal/aimv-worker/jobs/${job.jobId}/execute`,
       { attemptToken: job.attemptToken },
-      { headers: this.headers(), timeout: 0 },
+      { headers: this.headers(), timeout: WORKER_CONFIG.aimvExecuteTimeoutMs, signal },
     ));
   }
 
