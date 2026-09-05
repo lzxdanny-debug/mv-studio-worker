@@ -17,6 +17,7 @@
     "@remotion/bundler": "4.0.489",
     "@remotion/renderer": "4.0.489",
     "axios": "^1.7.2",
+    "dotenv": "16.4.5",
     "react": "18.3.1",
     "react-dom": "18.3.1",
     "reflect-metadata": "^0.2.2",

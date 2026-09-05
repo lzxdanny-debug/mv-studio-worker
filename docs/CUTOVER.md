@@ -22,17 +22,17 @@ COMPOSE_GLOBAL_MAX_RUNNING=4
 COMPOSE_GLOBAL_MAX_QUEUED=50
 ```
 
-### 本机 Worker（`.env` 已废弃，改 `src/config/worker.constants.ts`）
+### 本机 Worker
 
-```typescript
-// mainApiBaseUrl、workerApiKey 与测试 API 一致
+```bash
+export COMPOSE_WORKER_API_KEY=<与测试API一致的密钥>
+# mainApiBaseUrl 仍在 src/config/worker.constants.ts 中配置
 ```
 
 ## 启动 Worker
 
 ```bash
 cd mv-studio-worker
-cp .env.example .env   # 填入上述变量
 pnpm install
 pnpm dev
 ```

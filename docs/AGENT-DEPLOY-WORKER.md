@@ -32,7 +32,7 @@
 1. **一台机器可以只跑 test、只跑 prod，或两个都跑**——但必须是**两套目录 + 两个 PM2 进程 + 两套配置**，禁止一个进程改来改去切环境。
 2. **测试 Worker 绝对不要指向 `https://api.aimv.com` 或旧生产域 `https://api.aimv.video`**，否则会抢走生产合成队列。
 3. **生产 Worker 绝对不要指向测试 API**。
-4. 当前仓库配置写在 `src/config/worker.constants.ts`（构建进 `dist`）。部署时由 secrets **改写该文件再 build**；不要把真实 Key commit 回 git。
+4. 连接地址、实例 ID 和并发数写在 `src/config/worker.constants.ts`（构建进 `dist`）；`COMPOSE_WORKER_API_KEY` **必须由运行时环境变量注入**，禁止再写入源码。
 
 ```
 用户触发合成
@@ -215,7 +215,7 @@ echo "═══ Phase 0 ✅ ═══"
 cat > /tmp/patch-worker-constants.py <<'PY'
 #!/usr/bin/env python3
 import re, sys
-path, main, key, wid, slots = sys.argv[1:6]
+path, main, wid, slots = sys.argv[1:5]
 
 def sub_str(src, field, val):
     return re.sub(
@@ -227,7 +227,6 @@ def sub_str(src, field, val):
 
 text = open(path, encoding="utf-8").read()
 text = sub_str(text, "mainApiBaseUrl", main)
-text = sub_str(text, "workerApiKey", key)
 text = sub_str(text, "workerId", wid)
 text = re.sub(r"(workerMaxSlots:\s*)\d+", r"\g<1>" + str(int(slots)), text, count=1)
 open(path, "w", encoding="utf-8").write(text)
@@ -276,8 +275,13 @@ fi
 "
 
 CONST="${APP_DIR}/src/config/worker.constants.ts"
-python3 /tmp/patch-worker-constants.py "$CONST" "$MAIN_URL" "$KEY" "$WID" "$SLOTS"
+python3 /tmp/patch-worker-constants.py "$CONST" "$MAIN_URL" "$WID" "$SLOTS"
 grep -nE 'mainApiBaseUrl|workerId|workerMaxSlots' "$CONST"
+
+# 密钥不再写入 TypeScript，单独保存为运行时环境文件。
+ENV_FILE="/opt/ai-studio/secrets/worker-${ENV_NAME}.env"
+sudo install -o aistudio -g aistudio -m 600 /dev/null "$ENV_FILE"
+sudo -u aistudio env KEY="$KEY" sh -c 'printf "COMPOSE_WORKER_API_KEY=%s\\n" "$KEY" > "$1"' sh "$ENV_FILE"
 
 # 若刚被 git reset 冲掉，可从备份恢复；首次则写入备份
 sudo -iu aistudio mkdir -p /opt/ai-studio/secrets
@@ -311,6 +315,9 @@ pnpm install --frozen-lockfile
 pnpm build
 test -f dist/main.js
 
+set -a
+source "/opt/ai-studio/secrets/worker-test.env" # prod 改为 worker-prod.env
+set +a
 export REMOTION_BROWSER_EXECUTABLE=/usr/bin/chromium
 export NODE_ENV=production
 
@@ -327,6 +334,7 @@ cat > /tmp/ecosystem-worker.json <<EOF
     "max_memory_restart": "3500M",
     "env": {
       "NODE_ENV": "production",
+      "COMPOSE_WORKER_API_KEY": "${COMPOSE_WORKER_API_KEY:?missing COMPOSE_WORKER_API_KEY}",
       "REMOTION_BROWSER_EXECUTABLE": "/usr/bin/chromium"
     },
     "out_file": "/opt/ai-studio/logs/'$PM2_NAME'-out.log",

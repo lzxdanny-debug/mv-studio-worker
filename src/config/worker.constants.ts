@@ -1,14 +1,24 @@
+import 'dotenv/config';
+
+function requiredEnv(name: string): string {
+  const value = process.env[name]?.trim();
+  if (!value) {
+    throw new Error(`缺少必填环境变量 ${name}，Worker 已拒绝启动`);
+  }
+  return value;
+}
+
 /**
- * Worker 运行时配置（修改本文件即可，无需 .env）
+ * Worker 运行时配置。
  *
- * 部署到测试/生产时改 mainApiBaseUrl、workerApiKey；
+ * 部署到测试/生产时通过环境变量注入密钥；
  * 多实例扩容时改 workerId；算力允许时再提高 workerMaxSlots。
  */
 export const WORKER_CONFIG = {
   /** 主服务地址，不含 /api 前缀 */
   mainApiBaseUrl: 'http://localhost:4001',
   /** 与 API 的 COMPOSE_WORKER_API_KEY 一致 */
-  workerApiKey: '6bcd8344-5853-48bb-83b0-3fc3c991e409',
+  workerApiKey: requiredEnv('COMPOSE_WORKER_API_KEY'),
   /** 本实例标识，多 Worker 时须唯一 */
   workerId: 'local-dev-01',
   /** 本机同时处理的合成任务数 */

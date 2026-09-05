@@ -8,7 +8,9 @@ MV Studio 独立媒体处理服务（Media Worker）。
 ## 快速启动（本机开发）
 
 ```bash
-# 编辑 src/config/worker.constants.ts（mainApiBaseUrl、workerApiKey 等）
+# 配置与主 API 一致的密钥（也可由 PM2/systemd 注入）
+export COMPOSE_WORKER_API_KEY=<与主API一致的密钥>
+# 连接地址、实例 ID 与并发数仍在 src/config/worker.constants.ts 中配置
 pnpm install
 pnpm dev
 ```

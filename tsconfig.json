@@ -8,13 +8,13 @@
     "allowSyntheticDefaultImports": true,
     "target": "ES2021",
     "sourceMap": true,
+    "rootDir": "./src",
     "outDir": "./dist",
-    "baseUrl": "./",
-    "incremental": true,
+    "incremental": false,
     "skipLibCheck": true,
     "strictNullChecks": true,
     "noImplicitAny": false,
-    "esModuleInterop": true
-    ,"jsx": "react-jsx"
+    "esModuleInterop": true,
+    "jsx": "react-jsx"
   }
 }
