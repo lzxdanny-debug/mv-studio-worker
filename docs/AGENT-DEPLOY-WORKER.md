@@ -19,7 +19,7 @@
 
 | 维度 | 测试环境 (`test`) | 生产环境 (`prod`) |
 |------|-------------------|-------------------|
-| 对接 API（`mainApiBaseUrl`，**不要**带 `/api`） | 测试 API，例如 `http://<测试机IP>:4001` 或测试域名 | `https://api.aimv.video` |
+| 对接 API（`mainApiBaseUrl`，**不要**带 `/api`） | 测试 API，例如 `http://<测试机IP>:4001` 或测试域名 | `https://api.aimv.com` |
 | API Key | **测试 API** 的 `COMPOSE_WORKER_API_KEY` | **生产 API**（K8s secret / Admin）的 key |
 | `workerId` | 如 `ubuntu-test-01`（全局唯一） | 如 `ubuntu-prod-01` |
 | PM2 进程名 | `mv-studio-worker-test` | `mv-studio-worker-prod` |
@@ -30,7 +30,7 @@
 **硬规则：**
 
 1. **一台机器可以只跑 test、只跑 prod，或两个都跑**——但必须是**两套目录 + 两个 PM2 进程 + 两套配置**，禁止一个进程改来改去切环境。
-2. **测试 Worker 绝对不要指向 `https://api.aimv.video`**，否则会抢走生产合成队列。
+2. **测试 Worker 绝对不要指向 `https://api.aimv.com` 或旧生产域 `https://api.aimv.video`**，否则会抢走生产合成队列。
 3. **生产 Worker 绝对不要指向测试 API**。
 4. 当前仓库配置写在 `src/config/worker.constants.ts`（构建进 `dist`）。部署时由 secrets **改写该文件再 build**；不要把真实 Key commit 回 git。
 
@@ -44,7 +44,7 @@
 └─────────────────┘                                  └──────────────────────┘
 
 ┌─────────────────┐     claim/progress/complete      ┌──────────────────────┐
-│ api.aimv.video  │◄────────────────────────────────│ Worker-prod (PM2)     │
+│ api.aimv.com    │◄────────────────────────────────│ Worker-prod (PM2)     │
 │ (EKS)           │                                  │ MAIN=https://api...   │
 └─────────────────┘                                  └──────────────────────┘
 ```
@@ -113,7 +113,7 @@ TEST_WORKER_ID=ubuntu-test-01
 TEST_WORKER_MAX_SLOTS=2
 
 # ── 生产环境（WORKER_ENVS 含 prod 时必填）────────────────────────────────
-PROD_MAIN_API_BASE_URL=https://api.aimv.video
+PROD_MAIN_API_BASE_URL=https://api.aimv.com
 PROD_COMPOSE_WORKER_API_KEY=<与生产 API COMPOSE_WORKER_API_KEY 完全一致>
 PROD_WORKER_ID=ubuntu-prod-01
 PROD_WORKER_MAX_SLOTS=2
@@ -134,7 +134,7 @@ set -a; source /tmp/worker-deploy-secrets.env; set +a
 test -n "$WORKER_ENVS"
 echo "$WORKER_ENVS" | grep -Eq 'test|prod' || exit 1
 # 对每个 env 检查对应 MAIN_API_BASE_URL 与 KEY 非空、不含 <占位符>
-# TEST_* 不得等于 https://api.aimv.video
+# TEST_* 不得等于 https://api.aimv.com 或 https://api.aimv.video
 ```
 
 若 `TEST_MAIN_API_BASE_URL` 指向生产域名 → **立即停止并问用户**。
@@ -149,7 +149,7 @@ grep COMPOSE_CONSUMER_MODE /opt/ai-studio/mv-studio-api/.env.production   # = wo
 grep COMPOSE_WORKER_API_KEY /opt/ai-studio/mv-studio-api/.env.production # 与 secrets 一致
 
 # 生产：K8s / Admin 配置里 COMPOSE_CONSUMER_MODE=worker，且 Key 已下发
-curl -sS "https://api.aimv.video/health"   # 期望 ok
+curl -sS "https://api.aimv.com/health"   # 期望 ok
 ```
 
 Internal 路由在全局 prefix 之外：路径是 `{MAIN}/internal/worker/...`，不是 `{MAIN}/api/internal/...`。
@@ -258,7 +258,7 @@ SLOTS="${TEST_WORKER_MAX_SLOTS}"
 # WID="${PROD_WORKER_ID}"
 # SLOTS="${PROD_WORKER_MAX_SLOTS}"
 
-if [[ "$ENV_NAME" == "test" && "$MAIN_URL" == *"api.aimv.video"* ]]; then
+if [[ "$ENV_NAME" == "test" ]] && [[ "$MAIN_URL" == *"api.aimv.com"* || "$MAIN_URL" == *"api.aimv.video"* || "$MAIN_URL" == *"api.verzivo.ai"* ]]; then
   echo "❌ test Worker 禁止指向生产 API: $MAIN_URL" >&2
   exit 1
 fi
@@ -356,7 +356,7 @@ pm2 status
 从 secrets 取该环境的 `MAIN_URL` 与 `KEY`：
 
 ```bash
-MAIN_URL="http://<测试API>:4001"   # 或 https://api.aimv.video
+MAIN_URL="http://<测试API>:4001"   # 生产冒烟才用 https://api.aimv.com
 KEY="..."
 WID="ubuntu-test-01-smoke"
 
@@ -482,8 +482,8 @@ chmod 600 /opt/ai-studio/secrets/worker-test.constants.ts
 
 - [ ] `WORKER_ENVS` 中每个环境 PM2 `online`
 - [ ] claim 冒烟 204/200，非 401
-- [ ] test 的 `mainApiBaseUrl` ≠ `https://api.aimv.video`
-- [ ] prod（若部署）的 `mainApiBaseUrl` = `https://api.aimv.video`
+- [ ] test 的 `mainApiBaseUrl` ≠ `https://api.aimv.com` / `https://api.aimv.video`
+- [ ] prod（若部署）的 `mainApiBaseUrl` = `https://api.aimv.com`
 - [ ] `/opt/ai-studio/secrets/worker-*.constants.ts` 已备份且权限 600
 - [ ] （可选）Runner online，标签与环境一致
 - [ ] 触发一笔合成任务，日志出现 Claim → Complete
@@ -561,7 +561,7 @@ WORKER_BRANCH=main
 AI_USER=aistudio
 AI_HOME=/opt/ai-studio
 
-PROD_MAIN_API_BASE_URL=https://api.aimv.video
+PROD_MAIN_API_BASE_URL=https://api.aimv.com
 PROD_COMPOSE_WORKER_API_KEY=请填写与生产API一致的密钥
 PROD_WORKER_ID=ubuntu-prod-01
 PROD_WORKER_MAX_SLOTS=2
