@@ -26,7 +26,8 @@ COMPOSE_GLOBAL_MAX_QUEUED=50
 
 ```bash
 export COMPOSE_WORKER_API_KEY=<与测试API一致的密钥>
-# mainApiBaseUrl 仍在 src/config/worker.constants.ts 中配置
+export MAIN_API_BASE_URL=http://<测试机IP>:4001
+export WORKER_ID=ubuntu-test-01
 ```
 
 ## 启动 Worker

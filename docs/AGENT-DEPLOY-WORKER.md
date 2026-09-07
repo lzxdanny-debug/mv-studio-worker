@@ -19,9 +19,9 @@
 
 | 维度 | 测试环境 (`test`) | 生产环境 (`prod`) |
 |------|-------------------|-------------------|
-| 对接 API（`mainApiBaseUrl`，**不要**带 `/api`） | 测试 API，例如 `http://<测试机IP>:4001` 或测试域名 | `https://api.aimv.com` |
+| 对接 API（`MAIN_API_BASE_URL`，**不要**带 `/api`） | 测试 API，例如 `http://<测试机IP>:4001` 或测试域名 | `https://api.aimv.com` |
 | API Key | **测试 API** 的 `COMPOSE_WORKER_API_KEY` | **生产 API**（K8s secret / Admin）的 key |
-| `workerId` | 如 `ubuntu-test-01`（全局唯一） | 如 `ubuntu-prod-01` |
+| `WORKER_ID` | 如 `ubuntu-test-01`（全局唯一） | 如 `ubuntu-prod-01` |
 | PM2 进程名 | `mv-studio-worker-test` | `mv-studio-worker-prod` |
 | 代码目录（推荐） | `/opt/ai-studio/mv-studio-worker-test` | `/opt/ai-studio/mv-studio-worker-prod` |
 | Runner 标签（若装自动部署） | `self-hosted,mv-studio-worker,test` | `self-hosted,mv-studio-worker,prod` |
@@ -32,7 +32,7 @@
 1. **一台机器可以只跑 test、只跑 prod，或两个都跑**——但必须是**两套目录 + 两个 PM2 进程 + 两套配置**，禁止一个进程改来改去切环境。
 2. **测试 Worker 绝对不要指向 `https://api.aimv.com` 或旧生产域 `https://api.aimv.video`**，否则会抢走生产合成队列。
 3. **生产 Worker 绝对不要指向测试 API**。
-4. 连接地址、实例 ID 和并发数写在 `src/config/worker.constants.ts`（构建进 `dist`）；`COMPOSE_WORKER_API_KEY` **必须由运行时环境变量注入**，禁止再写入源码。
+4. `MAIN_API_BASE_URL`、`WORKER_ID` 和 `COMPOSE_WORKER_API_KEY` **必须由运行时环境变量注入**，禁止写入源码。
 
 ```
 用户触发合成
@@ -110,13 +110,11 @@ AI_HOME=/opt/ai-studio
 TEST_MAIN_API_BASE_URL=http://<测试API主机>:4001
 TEST_COMPOSE_WORKER_API_KEY=<与测试 API .env 中 COMPOSE_WORKER_API_KEY 完全一致>
 TEST_WORKER_ID=ubuntu-test-01
-TEST_WORKER_MAX_SLOTS=2
 
 # ── 生产环境（WORKER_ENVS 含 prod 时必填）────────────────────────────────
 PROD_MAIN_API_BASE_URL=https://api.aimv.com
 PROD_COMPOSE_WORKER_API_KEY=<与生产 API COMPOSE_WORKER_API_KEY 完全一致>
 PROD_WORKER_ID=ubuntu-prod-01
-PROD_WORKER_MAX_SLOTS=2
 
 # ── GitHub Actions Runner（可选；要 push 自动部署时再填）────────────────
 # 在 GitHub → 仓库 Settings → Actions → Runners → New runner 生成的 token（约 1h 有效）
@@ -209,35 +207,7 @@ echo "═══ Phase 0 ✅ ═══"
 
 ## 四、Phase 1 — 拉取代码并按环境写配置
 
-### 4.1 先写 patch 脚本到磁盘（避免嵌套引号）
-
-```bash
-cat > /tmp/patch-worker-constants.py <<'PY'
-#!/usr/bin/env python3
-import re, sys
-path, main, wid, slots = sys.argv[1:5]
-
-def sub_str(src, field, val):
-    return re.sub(
-        rf"({field}:\s*)'[^']*'",
-        lambda m: m.group(1) + "'" + val.replace("\\", "\\\\").replace("'", "\\'") + "'",
-        src,
-        count=1,
-    )
-
-text = open(path, encoding="utf-8").read()
-text = sub_str(text, "mainApiBaseUrl", main)
-text = sub_str(text, "workerId", wid)
-text = re.sub(r"(workerMaxSlots:\s*)\d+", r"\g<1>" + str(int(slots)), text, count=1)
-open(path, "w", encoding="utf-8").write(text)
-print("patched", path)
-print("mainApiBaseUrl =", main)
-print("workerId =", wid)
-PY
-chmod +x /tmp/patch-worker-constants.py
-```
-
-### 4.2 对 secrets 里每个 env 执行（示例：test；prod 改 ENV_NAME 与变量前缀）
+### 4.1 对 secrets 里每个 env 执行（示例：test；prod 改 ENV_NAME 与变量前缀）
 
 ```bash
 set -a; source /tmp/worker-deploy-secrets.env; set +a
@@ -248,14 +218,12 @@ APP_DIR="${AI_HOME}/mv-studio-worker-${ENV_NAME}"
 MAIN_URL="${TEST_MAIN_API_BASE_URL}"
 KEY="${TEST_COMPOSE_WORKER_API_KEY}"
 WID="${TEST_WORKER_ID}"
-SLOTS="${TEST_WORKER_MAX_SLOTS}"
 # prod 时：
 # ENV_NAME=prod
 # APP_DIR="${AI_HOME}/mv-studio-worker-prod"
 # MAIN_URL="${PROD_MAIN_API_BASE_URL}"
 # KEY="${PROD_COMPOSE_WORKER_API_KEY}"
 # WID="${PROD_WORKER_ID}"
-# SLOTS="${PROD_WORKER_MAX_SLOTS}"
 
 if [[ "$ENV_NAME" == "test" ]] && [[ "$MAIN_URL" == *"api.aimv.com"* || "$MAIN_URL" == *"api.aimv.video"* || "$MAIN_URL" == *"api.verzivo.ai"* ]]; then
   echo "❌ test Worker 禁止指向生产 API: $MAIN_URL" >&2
@@ -274,25 +242,18 @@ else
 fi
 "
 
-CONST="${APP_DIR}/src/config/worker.constants.ts"
-python3 /tmp/patch-worker-constants.py "$CONST" "$MAIN_URL" "$WID" "$SLOTS"
-grep -nE 'mainApiBaseUrl|workerId|workerMaxSlots' "$CONST"
-
-# 密钥不再写入 TypeScript，单独保存为运行时环境文件。
+# 连接地址、实例 ID 和密钥均保存为运行时环境变量，不修改 TypeScript 源码。
 ENV_FILE="/opt/ai-studio/secrets/worker-${ENV_NAME}.env"
 sudo install -o aistudio -g aistudio -m 600 /dev/null "$ENV_FILE"
-sudo -u aistudio env KEY="$KEY" sh -c 'printf "COMPOSE_WORKER_API_KEY=%s\\n" "$KEY" > "$1"' sh "$ENV_FILE"
-
-# 若刚被 git reset 冲掉，可从备份恢复；首次则写入备份
-sudo -iu aistudio mkdir -p /opt/ai-studio/secrets
-sudo cp "$CONST" "/opt/ai-studio/secrets/worker-${ENV_NAME}.constants.ts"
-sudo chown aistudio:aistudio "/opt/ai-studio/secrets/worker-${ENV_NAME}.constants.ts"
-sudo chmod 600 "/opt/ai-studio/secrets/worker-${ENV_NAME}.constants.ts"
+sudo -u aistudio env MAIN_URL="$MAIN_URL" WID="$WID" KEY="$KEY" sh -c '
+  printf "MAIN_API_BASE_URL=%s\nWORKER_ID=%s\nCOMPOSE_WORKER_API_KEY=%s\n" \
+    "$MAIN_URL" "$WID" "$KEY" > "$1"
+' sh "$ENV_FILE"
 ```
 
 可选：把 `clipCacheDir` 设为 `/var/cache/mv-worker/<env>`，避免 test/prod 缓存互相污染。
 
-对 `WORKER_ENVS` 中每个环境重复 §4.2，然后：
+对 `WORKER_ENVS` 中每个环境重复 §4.1，然后：
 
 ```
 ═══ Phase 1 ✅ ═══
@@ -334,6 +295,8 @@ cat > /tmp/ecosystem-worker.json <<EOF
     "max_memory_restart": "3500M",
     "env": {
       "NODE_ENV": "production",
+      "MAIN_API_BASE_URL": "${MAIN_API_BASE_URL:?missing MAIN_API_BASE_URL}",
+      "WORKER_ID": "${WORKER_ID:?missing WORKER_ID}",
       "COMPOSE_WORKER_API_KEY": "${COMPOSE_WORKER_API_KEY:?missing COMPOSE_WORKER_API_KEY}",
       "REMOTION_BROWSER_EXECUTABLE": "/usr/bin/chromium"
     },
@@ -452,33 +415,26 @@ jobs:
         run: |
           set -euo pipefail
           APP=/opt/ai-studio/mv-studio-worker-test
-          # 保留本机已 patch 的 worker.constants.ts：只更新代码时用 stash/备份策略
-          # 推荐：constants 从 /opt/ai-studio/secrets/worker-test.env 生成，勿被 git reset 覆盖
           cd "$APP"
-          cp src/config/worker.constants.ts /tmp/worker.constants.ts.bak
           git fetch origin main && git reset --hard origin/main
-          cp /tmp/worker.constants.ts.bak src/config/worker.constants.ts
-          # 更好：每次从 /opt/ai-studio/secrets/worker-test.constants.ts 覆盖
-          if [ -f /opt/ai-studio/secrets/worker-test.constants.ts ]; then
-            cp /opt/ai-studio/secrets/worker-test.constants.ts src/config/worker.constants.ts
-          fi
+          set -a
+          source /opt/ai-studio/secrets/worker-test.env
+          set +a
           pnpm install --frozen-lockfile
           pnpm build
-          pm2 restart mv-studio-worker-test
+          pm2 restart mv-studio-worker-test --update-env
           pm2 save
 ```
 
-**配置防丢失（强烈建议 Phase 1 末尾做）：**
+**配置防丢失（Phase 1 末尾确认）：**
 
 ```bash
-sudo -iu aistudio mkdir -p /opt/ai-studio/secrets
-sudo -iu aistudio cp /opt/ai-studio/mv-studio-worker-test/src/config/worker.constants.ts \
-  /opt/ai-studio/secrets/worker-test.constants.ts
-chmod 600 /opt/ai-studio/secrets/worker-test.constants.ts
-# prod 同理 → worker-prod.constants.ts
+sudo chown aistudio:aistudio /opt/ai-studio/secrets/worker-test.env
+sudo chmod 600 /opt/ai-studio/secrets/worker-test.env
+# prod 同理 → worker-prod.env
 ```
 
-之后每次 `git reset --hard` 后先从 secrets 拷回再 build。
+之后更新代码不会覆盖独立存放的环境文件；构建和重启前加载它即可。
 
 ```
 ═══ Phase 4 ✅ ═══
@@ -490,9 +446,9 @@ chmod 600 /opt/ai-studio/secrets/worker-test.constants.ts
 
 - [ ] `WORKER_ENVS` 中每个环境 PM2 `online`
 - [ ] claim 冒烟 204/200，非 401
-- [ ] test 的 `mainApiBaseUrl` ≠ `https://api.aimv.com` / `https://api.aimv.video`
-- [ ] prod（若部署）的 `mainApiBaseUrl` = `https://api.aimv.com`
-- [ ] `/opt/ai-studio/secrets/worker-*.constants.ts` 已备份且权限 600
+- [ ] test 的 `MAIN_API_BASE_URL` ≠ `https://api.aimv.com` / `https://api.aimv.video`
+- [ ] prod（若部署）的 `MAIN_API_BASE_URL` = `https://api.aimv.com`
+- [ ] `/opt/ai-studio/secrets/worker-*.env` 权限为 600
 - [ ] （可选）Runner online，标签与环境一致
 - [ ] 触发一笔合成任务，日志出现 Claim → Complete
 
@@ -508,8 +464,8 @@ chmod 600 /opt/ai-studio/secrets/worker-test.constants.ts
 | 有任务但不跑 | API 仍是 `COMPOSE_CONSUMER_MODE=local` | API 改为 `worker` 并重启 |
 | Remotion 失败 | 无 chromium | `apt install chromium`，设 `REMOTION_BROWSER_EXECUTABLE` |
 | 字幕乱码 | 缺中文字体 | `fonts-noto-cjk` |
-| 测试任务进了生产 | Worker 指错 API | 立刻停错环境 PM2，检查 constants |
-| `git reset` 后连错环境 | 配置被覆盖 | 从 `/opt/ai-studio/secrets/` 恢复再 build |
+| 测试任务进了生产 | Worker 指错 API | 立刻停错环境 PM2，检查 `MAIN_API_BASE_URL` |
+| 重启后连错环境 | 未加载环境文件 | 加载 `/opt/ai-studio/secrets/worker-<env>.env` 后使用 `--update-env` 重启 |
 
 ---
 
@@ -550,7 +506,6 @@ AI_HOME=/opt/ai-studio
 TEST_MAIN_API_BASE_URL=http://43.135.185.239:4001
 TEST_COMPOSE_WORKER_API_KEY=请填写与测试API一致的密钥
 TEST_WORKER_ID=ubuntu-test-01
-TEST_WORKER_MAX_SLOTS=2
 
 # 本机暂不装 runner 可留空
 RUNNER_TOKEN=
@@ -572,7 +527,6 @@ AI_HOME=/opt/ai-studio
 PROD_MAIN_API_BASE_URL=https://api.aimv.com
 PROD_COMPOSE_WORKER_API_KEY=请填写与生产API一致的密钥
 PROD_WORKER_ID=ubuntu-prod-01
-PROD_WORKER_MAX_SLOTS=2
 
 RUNNER_TOKEN=
 RUNNER_REPO=msea-ai/mv-studio-work

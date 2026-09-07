@@ -11,16 +11,16 @@ function requiredEnv(name: string): string {
 /**
  * Worker 运行时配置。
  *
- * 部署到测试/生产时通过环境变量注入密钥；
- * 多实例扩容时改 workerId；算力允许时再提高 workerMaxSlots。
+ * 部署到测试/生产时通过环境变量注入连接地址、实例 ID 与密钥；
+ * 算力允许时再提高 workerMaxSlots。
  */
 export const WORKER_CONFIG = {
   /** 主服务地址，不含 /api 前缀 */
-  mainApiBaseUrl: 'http://localhost:4001',
+  mainApiBaseUrl: requiredEnv('MAIN_API_BASE_URL').replace(/\/+$/, ''),
   /** 与 API 的 COMPOSE_WORKER_API_KEY 一致 */
   workerApiKey: requiredEnv('COMPOSE_WORKER_API_KEY'),
   /** 本实例标识，多 Worker 时须唯一 */
-  workerId: 'local-dev-01',
+  workerId: requiredEnv('WORKER_ID'),
   /** 本机同时处理的合成任务数 */
   workerMaxSlots: 1,
   /** AI MV 渠道任务独立槽位；不会占用本机 FFmpeg 合成槽位 */
