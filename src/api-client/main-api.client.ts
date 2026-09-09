@@ -200,6 +200,19 @@ export class MainApiClient {
       }>;
       tmpDir?: string;
       hostname?: string;
+      slotGroups?: {
+        compose: { running: number; max: number };
+        aimv: { running: number; max: number };
+        cleanup: { running: number; max: number };
+      };
+      tickInFlight?: boolean;
+      oldestAimvAgeMs?: number | null;
+      cpuLoad1m?: number;
+      cpuCount?: number;
+      memoryTotalBytes?: number;
+      memoryFreeBytes?: number;
+      hostUptimeSec?: number;
+      processUptimeSec?: number;
     },
   ): Promise<WorkerCommandDto[]> {
     const { workerId } = WORKER_CONFIG;
@@ -222,6 +235,15 @@ export class MainApiClient {
             clipCacheProjects: stats?.clipCacheProjects,
             tmpDir: stats?.tmpDir,
             hostname: stats?.hostname,
+            slotGroups: stats?.slotGroups,
+            tickInFlight: stats?.tickInFlight,
+            oldestAimvAgeMs: stats?.oldestAimvAgeMs,
+            cpuLoad1m: stats?.cpuLoad1m,
+            cpuCount: stats?.cpuCount,
+            memoryTotalBytes: stats?.memoryTotalBytes,
+            memoryFreeBytes: stats?.memoryFreeBytes,
+            hostUptimeSec: stats?.hostUptimeSec,
+            processUptimeSec: stats?.processUptimeSec,
           },
           { headers: this.headers() },
         ),

@@ -154,6 +154,7 @@ export class PollerService implements OnModuleInit, OnModuleDestroy {
 
   private async heartbeat() {
     try {
+      const snapshot = this.snapshot();
       const tmpDir = this.tmpCleanup.resolveTmpDir();
       const tmpUsage = this.tmpCleanup.scanTmpUsage(tmpDir);
       const clipStats = this.clipCache.scanStats();
@@ -168,6 +169,19 @@ export class PollerService implements OnModuleInit, OnModuleDestroy {
         clipCacheProjects: clipStats.topProjects,
         tmpDir,
         hostname: os.hostname(),
+        slotGroups: {
+          compose: snapshot.compose,
+          aimv: snapshot.aimv,
+          cleanup: snapshot.cleanup,
+        },
+        tickInFlight: snapshot.tickInFlight,
+        oldestAimvAgeMs: snapshot.oldestAimvAgeMs,
+        cpuLoad1m: os.loadavg()[0],
+        cpuCount: os.cpus().length,
+        memoryTotalBytes: os.totalmem(),
+        memoryFreeBytes: os.freemem(),
+        hostUptimeSec: os.uptime(),
+        processUptimeSec: process.uptime(),
       });
       if (commands.length > 0) {
         await this.executeCommands(commands);
