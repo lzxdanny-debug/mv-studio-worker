@@ -338,7 +338,8 @@ pm2 status
 ```bash
 MAIN_URL="http://<测试API>:4001"   # 生产冒烟才用 https://api.aimv.com
 KEY="..."
-WID="ubuntu-test-01-smoke"
+# 使用该环境真实的 Worker ID，避免在看板永久留下一个 *-smoke 离线实例。
+WID="ubuntu-test-01"               # 生产示例：ubuntu-prod-01
 
 curl -sS -o /tmp/claim.json -w "claim HTTP %{http_code}\n" \
   -X POST "${MAIN_URL%/}/internal/worker/jobs/claim" \
