@@ -212,18 +212,24 @@ echo "═══ Phase 0 ✅ ═══"
 ```bash
 set -a; source /tmp/worker-deploy-secrets.env; set +a
 
-# ---- 按环境改这 5 行 ----
+# ---- 按环境设置以下变量 ----
 ENV_NAME=test
 APP_DIR="${AI_HOME}/mv-studio-worker-${ENV_NAME}"
 MAIN_URL="${TEST_MAIN_API_BASE_URL}"
 KEY="${TEST_COMPOSE_WORKER_API_KEY}"
 WID="${TEST_WORKER_ID}"
+COMPOSE_SLOTS="${TEST_WORKER_COMPOSE_MAX_SLOTS:-4}"
+AIMV_SLOTS="${TEST_WORKER_AIMV_MAX_SLOTS:-20}"
+CLEANUP_SLOTS="${TEST_WORKER_CLEANUP_MAX_SLOTS:-2}"
 # prod 时：
 # ENV_NAME=prod
 # APP_DIR="${AI_HOME}/mv-studio-worker-prod"
 # MAIN_URL="${PROD_MAIN_API_BASE_URL}"
 # KEY="${PROD_COMPOSE_WORKER_API_KEY}"
 # WID="${PROD_WORKER_ID}"
+# COMPOSE_SLOTS="${PROD_WORKER_COMPOSE_MAX_SLOTS:-4}"
+# AIMV_SLOTS="${PROD_WORKER_AIMV_MAX_SLOTS:-20}"
+# CLEANUP_SLOTS="${PROD_WORKER_CLEANUP_MAX_SLOTS:-2}"
 
 if [[ "$ENV_NAME" == "test" ]] && [[ "$MAIN_URL" == *"api.aimv.com"* || "$MAIN_URL" == *"api.aimv.video"* || "$MAIN_URL" == *"api.verzivo.ai"* ]]; then
   echo "❌ test Worker 禁止指向生产 API: $MAIN_URL" >&2
@@ -245,9 +251,9 @@ fi
 # 连接地址、实例 ID 和密钥均保存为运行时环境变量，不修改 TypeScript 源码。
 ENV_FILE="/opt/ai-studio/secrets/worker-${ENV_NAME}.env"
 sudo install -o aistudio -g aistudio -m 600 /dev/null "$ENV_FILE"
-sudo -u aistudio env MAIN_URL="$MAIN_URL" WID="$WID" KEY="$KEY" sh -c '
-  printf "MAIN_API_BASE_URL=%s\nWORKER_ID=%s\nCOMPOSE_WORKER_API_KEY=%s\n" \
-    "$MAIN_URL" "$WID" "$KEY" > "$1"
+sudo -u aistudio env MAIN_URL="$MAIN_URL" WID="$WID" KEY="$KEY" COMPOSE_SLOTS="$COMPOSE_SLOTS" AIMV_SLOTS="$AIMV_SLOTS" CLEANUP_SLOTS="$CLEANUP_SLOTS" sh -c '
+  printf "MAIN_API_BASE_URL=%s\nWORKER_ID=%s\nCOMPOSE_WORKER_API_KEY=%s\nWORKER_COMPOSE_MAX_SLOTS=%s\nWORKER_AIMV_MAX_SLOTS=%s\nWORKER_CLEANUP_MAX_SLOTS=%s\n" \
+    "$MAIN_URL" "$WID" "$KEY" "$COMPOSE_SLOTS" "$AIMV_SLOTS" "$CLEANUP_SLOTS" > "$1"
 ' sh "$ENV_FILE"
 ```
 
@@ -298,6 +304,9 @@ cat > /tmp/ecosystem-worker.json <<EOF
       "MAIN_API_BASE_URL": "${MAIN_API_BASE_URL:?missing MAIN_API_BASE_URL}",
       "WORKER_ID": "${WORKER_ID:?missing WORKER_ID}",
       "COMPOSE_WORKER_API_KEY": "${COMPOSE_WORKER_API_KEY:?missing COMPOSE_WORKER_API_KEY}",
+      "WORKER_COMPOSE_MAX_SLOTS": "${WORKER_COMPOSE_MAX_SLOTS:-4}",
+      "WORKER_AIMV_MAX_SLOTS": "${WORKER_AIMV_MAX_SLOTS:-20}",
+      "WORKER_CLEANUP_MAX_SLOTS": "${WORKER_CLEANUP_MAX_SLOTS:-2}",
       "REMOTION_BROWSER_EXECUTABLE": "/usr/bin/chromium"
     },
     "out_file": "/opt/ai-studio/logs/'$PM2_NAME'-out.log",

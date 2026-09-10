@@ -11,7 +11,7 @@
 - [ ] 确认上传 = 主服务预签名 URL，Worker 零凭证
 - [ ] 确认共享 = 复制移植 + 契约手抄（不建 media-core）
 - [ ] 确认推荐路径音频截取保留主服务
-- [ ] 跑 `benchmark-compose-cpu.mjs` 得实时因子/内存/磁盘 → 定 `WORKER_MAX_SLOTS`
+- [ ] 跑 `benchmark-compose-cpu.mjs` 得实时因子/内存/磁盘 → 定 `WORKER_COMPOSE_MAX_SLOTS`
 - [ ] 约定 `COMPOSE_WORKER_API_KEY` 分发方式
 
 ---

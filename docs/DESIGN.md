@@ -404,7 +404,9 @@ COMPOSE_PRESIGN_EXPIRES_SEC=14400   # 4h
 MAIN_API_BASE_URL=https://studio-api.xxx.com
 COMPOSE_WORKER_API_KEY=<同上>
 WORKER_ID=worker-01
-WORKER_MAX_SLOTS=2                   # 单实例并发 FFmpeg 数
+WORKER_COMPOSE_MAX_SLOTS=4           # 单实例并发 FFmpeg 数
+WORKER_AIMV_MAX_SLOTS=20             # AI MV 渠道任务并发
+WORKER_CLEANUP_MAX_SLOTS=2           # 到期文件清理并发
 WORKER_POLL_INTERVAL_MS=3000
 FFMPEG_PATH=ffmpeg
 FFPROBE_PATH=ffprobe
@@ -418,7 +420,7 @@ TMP_DIR=/tmp
 - 实时因子（编码耗时/成片时长）真实素材约 1.5–2.5
 - 安全并发 ≈ 核数 / 实时因子（如 4 核 → 约 2 路）
 - 单路峰值内存 100–400MB，/tmp 1–4GB
-- `WORKER_MAX_SLOTS` 建议 = 安全并发；实例数按队列深度扩缩
+- `WORKER_COMPOSE_MAX_SLOTS` 建议 = 安全并发；实例数按队列深度扩缩
 
 ---
 

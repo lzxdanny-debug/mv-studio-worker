@@ -170,7 +170,7 @@ DURATIONS=60,180 CONCURRENCY=1,5,10,15 TMP_DIR=/data/mv-bench bash scripts/run-b
 | **争抢因子** | 单路墙钟之和 ÷ 并发总墙钟；≈并发数 = 线性扩展 |
 | **整机 CPU** | 压测期间平均 CPU；>80% 说明接近瓶颈 |
 
-### 定 WORKER_MAX_SLOTS
+### 定 WORKER_COMPOSE_MAX_SLOTS
 
 从报告中取 **并发 = 1** 的 **CPU 因子**（记为 `F`），机器逻辑核数 `C`：
 
@@ -189,7 +189,7 @@ DURATIONS=60,180 CONCURRENCY=1,5,10,15 TMP_DIR=/data/mv-bench bash scripts/run-b
 - [ ] 跑 `--duration 60 --concurrency 1` 冒烟成功
 - [ ] 跑完整 `--durations` × `--concurrency` 矩阵
 - [ ] 保存 `.md` + `.json` 报告
-- [ ] 根据 CPU 因子给出 `WORKER_MAX_SLOTS` 建议
+- [ ] 根据 CPU 因子给出 `WORKER_COMPOSE_MAX_SLOTS` 建议
 
 ---
 

@@ -12,9 +12,15 @@ MV Studio 独立媒体处理服务（Media Worker）。
 export MAIN_API_BASE_URL=http://localhost:4001
 export WORKER_ID=local-dev-01
 export COMPOSE_WORKER_API_KEY=<与主API一致的密钥>
+export WORKER_COMPOSE_MAX_SLOTS=4
+export WORKER_AIMV_MAX_SLOTS=20
+export WORKER_CLEANUP_MAX_SLOTS=2
 pnpm install
 pnpm dev
 ```
+
+三类槽位相互独立，均可按服务器能力调整；设为 `0` 可关闭该类任务。旧的
+`WORKER_MAX_SLOTS` 仍可作为合成槽位的兼容配置。
 
 冒烟验证 Internal API：
 
