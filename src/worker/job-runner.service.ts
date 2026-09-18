@@ -33,10 +33,25 @@ export class JobRunnerService {
   async run(job: WorkerJobDto): Promise<void> {
     const ctx = () => formatJobContext(job, this.workerId());
     let lastStage = '';
+    let leaseTimer: NodeJS.Timeout | null = null;
+
+    if (job.type === 'compose_aimv') {
+      if (!job.attemptToken) {
+        throw new Error(`AIMV 合成任务 ${job.jobId} 缺少 attempt token`);
+      }
+      const leaseSeconds = job.leaseSeconds ?? WORKER_CONFIG.composeAimvLeaseSeconds;
+      leaseTimer = setInterval(() => {
+        void this.api.renewAimvComposeLease(job).catch((error) => {
+          this.logger.warn(
+            `[Lease] AIMV 合成续租失败 ${ctx()}: ${error instanceof Error ? error.message : error}`,
+          );
+        });
+      }, Math.max(10_000, Math.floor(leaseSeconds * 500)));
+    }
 
     const onProgress = async (p: ComposeProgressPayload) => {
       try {
-        await this.api.updateProgress(job.jobId, p);
+        await this.api.updateProgress(job, p);
         if (p.stage !== lastStage) {
           lastStage = p.stage;
           this.logger.log(
@@ -78,14 +93,23 @@ export class JobRunnerService {
         default:
           throw new Error(`未知 job type: ${(job as WorkerJobDto).type}`);
       }
-      if (job.type === 'compose_aimv') await this.api.completeAimvComposition(job.projectId, outputs);
-      await this.api.complete(job.jobId, outputs);
+      if (job.type === 'compose_aimv') await this.api.completeAimvComposition(job, outputs);
+      else await this.api.complete(job, outputs);
       this.logger.log(`[Done] ${ctx()} result=${outputs.resultUrl?.slice(0, 80) ?? 'n/a'}`);
     } catch (err) {
       const msg = err instanceof Error ? err.message : String(err);
       this.logger.error(`[Failed] ${ctx()} error=${msg.slice(0, 200)}`);
-      await this.api.fail(job.jobId, msg, job.type !== 'compose_aimv');
-      if (job.type === 'compose_aimv') await this.api.failAimvComposition(job.projectId, msg);
+      if (job.type === 'compose_aimv') {
+        await this.api.failAimvComposition(job, msg).catch((error) => {
+          this.logger.warn(`[Failed] AIMV 项目失败回调未接受 ${ctx()}: ${error instanceof Error ? error.message : error}`);
+        });
+      } else {
+        await this.api.fail(job, msg, true).catch((error) => {
+          this.logger.warn(`[Failed] 合成任务失败回调未接受 ${ctx()}: ${error instanceof Error ? error.message : error}`);
+        });
+      }
+    } finally {
+      if (leaseTimer) clearInterval(leaseTimer);
     }
   }
 }

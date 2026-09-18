@@ -33,6 +33,8 @@ export const WORKER_CONFIG = {
   workerId: requiredEnv('WORKER_ID'),
   /** 本机同时处理的合成任务数；兼容旧变量 WORKER_MAX_SLOTS */
   workerMaxSlots: nonNegativeIntegerEnv('WORKER_COMPOSE_MAX_SLOTS', 4, 'WORKER_MAX_SLOTS'),
+  /** AIMV 最终合成租约秒数；执行中按一半周期续租。 */
+  composeAimvLeaseSeconds: 120,
   /** AI MV 渠道任务独立槽位；不会占用本机 FFmpeg 合成槽位 */
   aimvWorkerMaxSlots: nonNegativeIntegerEnv('WORKER_AIMV_MAX_SLOTS', 20),
   /** AI MV claim 租约秒数，执行中会定期续租 */

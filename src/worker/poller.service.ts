@@ -24,6 +24,7 @@ export class PollerService implements OnModuleInit, OnModuleDestroy {
   private running = 0;
   private runningAimv = 0;
   private runningCleanup = 0;
+  private aimvMaxSlots = WORKER_CONFIG.aimvWorkerMaxSlots;
   private ticking = false;
   private readonly aimvStartedAt = new Map<string, number>();
   private heartbeatTimer: NodeJS.Timeout | null = null;
@@ -60,7 +61,7 @@ export class PollerService implements OnModuleInit, OnModuleDestroy {
     return {
       workerId: WORKER_CONFIG.workerId,
       compose: { running: this.running, max: this.maxSlots() },
-      aimv: { running: this.runningAimv, max: WORKER_CONFIG.aimvWorkerMaxSlots },
+      aimv: { running: this.runningAimv, max: this.aimvMaxSlots },
       cleanup: { running: this.runningCleanup, max: WORKER_CONFIG.aimvCleanupMaxSlots },
       tickInFlight: this.ticking,
       oldestAimvAgeMs,
@@ -93,7 +94,7 @@ export class PollerService implements OnModuleInit, OnModuleDestroy {
   }
 
   private async claimAimv() {
-    const capacity = WORKER_CONFIG.aimvWorkerMaxSlots - this.runningAimv;
+    const capacity = this.aimvMaxSlots - this.runningAimv;
     if (capacity <= 0) return;
     const jobs = await this.api.claimAimvJobs(capacity);
     for (const job of jobs) {
@@ -158,7 +159,7 @@ export class PollerService implements OnModuleInit, OnModuleDestroy {
       const tmpDir = this.tmpCleanup.resolveTmpDir();
       const tmpUsage = this.tmpCleanup.scanTmpUsage(tmpDir);
       const clipStats = this.clipCache.scanStats();
-      const commands = await this.api.heartbeat(this.running + this.runningAimv + this.runningCleanup, this.maxSlots() + WORKER_CONFIG.aimvWorkerMaxSlots + WORKER_CONFIG.aimvCleanupMaxSlots, {
+      const response = await this.api.heartbeat(this.running + this.runningAimv + this.runningCleanup, this.maxSlots() + this.aimvMaxSlots + WORKER_CONFIG.aimvCleanupMaxSlots, {
         diskFreeBytes: this.tmpCleanup.resolveDiskFreeBytes(),
         tmpUsedBytes: tmpUsage.tmpUsedBytes,
         tmpDirCount: tmpUsage.dirCount,
@@ -183,6 +184,17 @@ export class PollerService implements OnModuleInit, OnModuleDestroy {
         hostUptimeSec: os.uptime(),
         processUptimeSec: process.uptime(),
       });
+      if (response.runtimeConfig) {
+        const configured = response.runtimeConfig.aimvMaxSlots;
+        const nextMaxSlots = configured == null ? WORKER_CONFIG.aimvWorkerMaxSlots : configured;
+        if (nextMaxSlots !== this.aimvMaxSlots) {
+          this.logger.log(
+            `[Runtime Config] AIMV 槽位 ${this.aimvMaxSlots} -> ${nextMaxSlots}${configured == null ? '（环境变量）' : '（后台配置）'}`,
+          );
+          this.aimvMaxSlots = nextMaxSlots;
+        }
+      }
+      const commands = response.commands ?? [];
       if (commands.length > 0) {
         await this.executeCommands(commands);
       }

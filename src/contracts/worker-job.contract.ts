@@ -194,6 +194,9 @@ export interface WorkerJobDto {
   jobId: string;
   type: ComposeJobType;
   priority: number;
+  /** Required for leased compose_aimv executions. */
+  attemptToken?: string;
+  leaseSeconds?: number;
   projectId: string;
   userId?: string;
   projectTitle?: string;
@@ -249,4 +252,8 @@ export interface WorkerCommandDto {
 export interface WorkerHeartbeatResponse {
   ok: boolean;
   commands?: WorkerCommandDto[];
+  runtimeConfig?: {
+    /** null 表示回退 Worker 本机 WORKER_AIMV_MAX_SLOTS。 */
+    aimvMaxSlots: number | null;
+  };
 }

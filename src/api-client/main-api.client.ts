@@ -59,7 +59,7 @@ export class MainApiClient {
       const res = await firstValueFrom(
         this.http.post(
           `${this.baseUrl()}/internal/worker/jobs/claim`,
-          { workerId, maxSlots },
+          { workerId, maxSlots, leaseSeconds: WORKER_CONFIG.composeAimvLeaseSeconds },
           { headers: this.headers(), validateStatus: (s) => s === 200 || s === 204 },
         ),
       );
@@ -110,18 +110,29 @@ export class MainApiClient {
     ));
   }
 
-  async completeAimvComposition(projectId: string, outputs: JobCompleteOutputs): Promise<void> {
+  async completeAimvComposition(job: WorkerJobDto, outputs: JobCompleteOutputs): Promise<void> {
     await firstValueFrom(this.http.post(
-      `${this.baseUrl()}/internal/aimv-worker/projects/${projectId}/composition-succeeded`,
-      { resultUrl: outputs.resultUrl, actualDurationSec: outputs.actualDurationSec },
+      `${this.baseUrl()}/internal/aimv-worker/projects/${job.projectId}/composition-succeeded`,
+      {
+        jobId: job.jobId,
+        workerId: WORKER_CONFIG.workerId,
+        attemptToken: job.attemptToken,
+        resultUrl: outputs.resultUrl,
+        actualDurationSec: outputs.actualDurationSec,
+      },
       { headers: this.headers() },
     ));
   }
 
-  async failAimvComposition(projectId: string, error: string): Promise<void> {
+  async failAimvComposition(job: WorkerJobDto, error: string): Promise<void> {
     await firstValueFrom(this.http.post(
-      `${this.baseUrl()}/internal/aimv-worker/projects/${projectId}/composition-failed`,
-      { error },
+      `${this.baseUrl()}/internal/aimv-worker/projects/${job.projectId}/composition-failed`,
+      {
+        jobId: job.jobId,
+        workerId: WORKER_CONFIG.workerId,
+        attemptToken: job.attemptToken,
+        error,
+      },
       { headers: this.headers() },
     ));
   }
@@ -149,33 +160,60 @@ export class MainApiClient {
     await firstValueFrom(this.http.post(`${this.baseUrl()}/internal/aimv-worker/cleanup-jobs/${job.jobId}/execute`, { attemptToken: job.attemptToken }, { headers: this.headers(), timeout: 300_000 }));
   }
 
-  async updateProgress(jobId: string, progress: ComposeProgressPayload): Promise<void> {
+  async renewAimvComposeLease(job: WorkerJobDto): Promise<void> {
     await firstValueFrom(
       this.http.patch(
-        `${this.baseUrl()}/internal/worker/jobs/${jobId}/progress`,
-        progress,
+        `${this.baseUrl()}/internal/worker/jobs/${job.jobId}/lease`,
+        {
+          workerId: WORKER_CONFIG.workerId,
+          attemptToken: job.attemptToken,
+          leaseSeconds: job.leaseSeconds ?? WORKER_CONFIG.composeAimvLeaseSeconds,
+        },
+        { headers: this.headers(), timeout: 15_000 },
+      ),
+    );
+  }
+
+  async updateProgress(job: WorkerJobDto, progress: ComposeProgressPayload): Promise<void> {
+    await firstValueFrom(
+      this.http.patch(
+        `${this.baseUrl()}/internal/worker/jobs/${job.jobId}/progress`,
+        {
+          ...progress,
+          workerId: WORKER_CONFIG.workerId,
+          attemptToken: job.attemptToken,
+        },
         { headers: this.headers() },
       ),
     );
   }
 
-  async complete(jobId: string, outputs: JobCompleteOutputs): Promise<void> {
-    this.logger.log(`[HTTP] POST /internal/worker/jobs/${jobId}/complete result=${outputs.resultUrl?.slice(0, 80) ?? 'n/a'}`);
+  async complete(job: WorkerJobDto, outputs: JobCompleteOutputs): Promise<void> {
+    this.logger.log(`[HTTP] POST /internal/worker/jobs/${job.jobId}/complete result=${outputs.resultUrl?.slice(0, 80) ?? 'n/a'}`);
     await firstValueFrom(
       this.http.post(
-        `${this.baseUrl()}/internal/worker/jobs/${jobId}/complete`,
-        { outputs },
+        `${this.baseUrl()}/internal/worker/jobs/${job.jobId}/complete`,
+        {
+          outputs,
+          workerId: WORKER_CONFIG.workerId,
+          attemptToken: job.attemptToken,
+        },
         { headers: this.headers() },
       ),
     );
   }
 
-  async fail(jobId: string, error: string, retryable = true): Promise<void> {
-    this.logger.warn(`[HTTP] POST /internal/worker/jobs/${jobId}/fail retryable=${retryable} error=${error.slice(0, 120)}`);
+  async fail(job: WorkerJobDto, error: string, retryable = true): Promise<void> {
+    this.logger.warn(`[HTTP] POST /internal/worker/jobs/${job.jobId}/fail retryable=${retryable} error=${error.slice(0, 120)}`);
     await firstValueFrom(
       this.http.post(
-        `${this.baseUrl()}/internal/worker/jobs/${jobId}/fail`,
-        { error, retryable },
+        `${this.baseUrl()}/internal/worker/jobs/${job.jobId}/fail`,
+        {
+          error,
+          retryable,
+          workerId: WORKER_CONFIG.workerId,
+          attemptToken: job.attemptToken,
+        },
         { headers: this.headers() },
       ),
     );
@@ -214,7 +252,7 @@ export class MainApiClient {
       hostUptimeSec?: number;
       processUptimeSec?: number;
     },
-  ): Promise<WorkerCommandDto[]> {
+  ): Promise<WorkerHeartbeatResponse> {
     const { workerId } = WORKER_CONFIG;
     try {
       const res = await firstValueFrom(
@@ -249,10 +287,10 @@ export class MainApiClient {
         ),
       );
       const body = res.data as WorkerHeartbeatResponse & { data?: WorkerHeartbeatResponse };
-      return body.commands ?? body.data?.commands ?? [];
+      return body.data ?? body;
     } catch (err) {
       this.logger.warn(formatHttpError(err, 'heartbeat 失败', `${this.baseUrl()}/internal/worker/heartbeat`));
-      return [];
+      return { ok: false, commands: [] };
     }
   }
 
