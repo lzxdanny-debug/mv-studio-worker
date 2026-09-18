@@ -8,6 +8,7 @@
     "dev": "nest start --watch",
     "start": "node dist/main.js",
     "start:prod": "node dist/main.js",
+    "test:download-retry": "node --test test/downloader-retry.test.cjs",
     "bench": "node scripts/benchmark-compose.mjs"
   },
   "dependencies": {

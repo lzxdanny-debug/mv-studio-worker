@@ -11,17 +11,39 @@ export class DownloaderService {
 
   async download(url: string, destPath: string, timeoutMs = 120_000): Promise<void> {
     fs.mkdirSync(path.dirname(destPath), { recursive: true });
-    const res = await axios.get(url, {
-      responseType: 'stream',
-      timeout: timeoutMs,
-      maxRedirects: 5,
-    });
-    await pipeline(res.data, createWriteStream(destPath));
-    const stat = fs.statSync(destPath);
-    if (stat.size < 1024) {
-      throw new Error(`下载文件过小: ${destPath} (${stat.size} bytes)`);
+    const partialPath = `${destPath}.part`;
+    const maxAttempts = 4;
+    let lastError: unknown;
+
+    for (let attempt = 1; attempt <= maxAttempts; attempt += 1) {
+      try {
+        fs.rmSync(partialPath, { force: true });
+        const res = await axios.get(url, {
+          responseType: 'stream',
+          timeout: timeoutMs,
+          maxRedirects: 5,
+        });
+        await pipeline(res.data, createWriteStream(partialPath, { flags: 'wx' }));
+        const stat = fs.statSync(partialPath);
+        if (stat.size < 1024) {
+          throw new Error(`下载文件过小: ${partialPath} (${stat.size} bytes)`);
+        }
+        fs.renameSync(partialPath, destPath);
+        this.logger.debug(`已下载 ${url.slice(0, 80)}... → ${destPath}`);
+        return;
+      } catch (error) {
+        lastError = error;
+        fs.rmSync(partialPath, { force: true });
+        if (attempt >= maxAttempts) break;
+        const delayMs = 500 * 2 ** (attempt - 1);
+        this.logger.warn(
+          `下载失败，${delayMs}ms 后重试（${attempt}/${maxAttempts - 1}）: ${error instanceof Error ? error.message : error}`,
+        );
+        await new Promise((resolve) => setTimeout(resolve, delayMs));
+      }
     }
-    this.logger.debug(`已下载 ${url.slice(0, 80)}... → ${destPath}`);
+
+    throw lastError instanceof Error ? lastError : new Error(String(lastError ?? '下载失败'));
   }
 }
 
